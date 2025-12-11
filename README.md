@@ -68,10 +68,12 @@ Tüm hostlar için `SUCCESS` mesajı almalısınız. Bağlantı sorunları varsa
 Playbook'u çalıştırın. Çıktı otomatik olarak tarihli bir dosyaya kaydedilir:
 
 ```bash
-ansible-playbook -i inventory.yml prerequisites.yml | tee "teknik_keşif_raporu_$(date +%Y%m%d).txt"
+ansible-playbook -i inventory.yml prerequisites.yml --skip-tags network_advanced | tee "teknik_keşif_raporu_wona$(date +%Y%m%d).txt"
+
+ansible-playbook -i inventory.yml prerequisites.yml --tags network_advanced | tee "teknik_keşif_raporu_na$(date +%Y%m%d).txt"
 ```
 
-Bu komut hem ekranda gösterir hem de `teknik_keşif_raporu_YYYYMMDD.txt` formatında bir dosyaya kaydeder (örneğin: `teknik_keşif_raporu_20241215.txt`).
+Bu komut hem ekranda gösterir hem de `teknik_keşif_raporu_YYYYMMDD.txt` formatında bir dosyaya kaydeder (örneğin: `teknik_keşif_raporu_wona20241215.txt`).
 
 ## Çıktı
 

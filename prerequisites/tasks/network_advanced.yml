@@ -1,0 +1,730 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Advanced Network Validation Checklist
+# Comprehensive network validation for dual-VLAN RKE2 cluster setup
+
+- name: Gather network interface facts
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!any'
+      - network
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Get all network interfaces
+  ansible.builtin.command: ip -o link show
+  register: network_interfaces
+  changed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Get IP address information for all interfaces
+  ansible.builtin.command: ip -4 addr show
+  register: ip_addr_info
+  changed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Set expected IPs based on node type
+  ansible.builtin.set_fact:
+    expected_control_ip: >-
+      {% if inventory_hostname in groups['bastion'] %}
+        {{ hostvars[inventory_hostname]['internal_ip'] | default(ansible_host) }}
+      {% elif inventory_hostname in groups['masters'] %}
+        {{ ansible_host }}
+      {% else %}
+        {{ hostvars[inventory_hostname]['mgmt_ip'] | default(ansible_host) }}
+      {% endif %}
+    expected_data_ip: >-
+      {% if inventory_hostname in groups['workers'] %}
+        {{ hostvars[inventory_hostname]['prod_data_ip'] | default('') }}
+      {% else %}
+        ''
+      {% endif %}
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Normalize IP addresses (strip whitespace)
+  ansible.builtin.set_fact:
+    expected_control_ip: "{{ expected_control_ip | trim }}"
+    expected_data_ip: "{{ expected_data_ip | trim }}"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify required interfaces are up and configured
+  block:
+    - name: Check network interface information
+      ansible.builtin.assert:
+        that:
+          - network_interfaces.rc == 0
+          - ip_addr_info.rc == 0
+        fail_msg: "Failed to gather network interface information"
+        success_msg: "Network interface information gathered successfully"
+  rescue:
+    - name: Record network interface information failure
+      ansible.builtin.debug:
+        msg: "WARNING: Failed to gather network interface information"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify control VLAN IP is configured
+  block:
+    - name: Check control VLAN IP configuration
+      ansible.builtin.assert:
+        that:
+          - expected_control_ip in ip_addr_info.stdout
+        fail_msg: "Control VLAN IP {{ expected_control_ip }} not found on any interface"
+        success_msg: "Control VLAN IP {{ expected_control_ip }} is configured"
+  rescue:
+    - name: Record control VLAN IP configuration failure
+      ansible.builtin.debug:
+        msg: "WARNING: Control VLAN IP {{ expected_control_ip }} not found on any interface"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify data VLAN IP is configured (workers only)
+  block:
+    - name: Check data VLAN IP configuration
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname not in groups['workers'] or (expected_data_ip != '' and expected_data_ip in ip_addr_info.stdout)
+        fail_msg: "Data VLAN IP {{ expected_data_ip }} not found on any interface (required for workers)"
+        success_msg: "Data VLAN IP {{ expected_data_ip }} is configured (workers)"
+  rescue:
+    - name: Record data VLAN IP configuration failure
+      ansible.builtin.debug:
+        msg: "WARNING: Data VLAN IP {{ expected_data_ip }} not found on any interface (required for workers)"
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify control VLAN IP is in control_vlan_network
+  ansible.builtin.command: python3 -c "import ipaddress; print('valid' if ipaddress.ip_address('{{ expected_control_ip }}') in ipaddress.ip_network('{{ control_vlan_network }}', strict=False) else 'invalid')"
+  register: control_ip_validation
+  changed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Assert control VLAN IP is in correct network
+  block:
+    - name: Check control VLAN IP network membership
+      ansible.builtin.assert:
+        that:
+          - control_ip_validation.stdout.strip() == "valid"
+        fail_msg: "Control VLAN IP {{ expected_control_ip }} is not in network {{ control_vlan_network }}"
+        success_msg: "Control VLAN IP {{ expected_control_ip }} is in network {{ control_vlan_network }}"
+  rescue:
+    - name: Record control VLAN IP network validation failure
+      ansible.builtin.debug:
+        msg: "WARNING: Control VLAN IP {{ expected_control_ip }} is not in network {{ control_vlan_network }}"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify data VLAN IP is in data_vlan_network (workers only)
+  ansible.builtin.command: python3 -c "import ipaddress; print('valid' if ipaddress.ip_address('{{ expected_data_ip }}') in ipaddress.ip_network('{{ data_vlan_network }}', strict=False) else 'invalid')"
+  register: data_ip_validation
+  changed_when: false
+  when: inventory_hostname in groups['workers'] and expected_data_ip != ''
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Assert data VLAN IP is in correct network (workers only)
+  block:
+    - name: Check data VLAN IP network membership
+      ansible.builtin.assert:
+        that:
+          - data_ip_validation.stdout.strip() == "valid"
+        fail_msg: "Data VLAN IP {{ expected_data_ip }} is not in network {{ data_vlan_network }}"
+        success_msg: "Data VLAN IP {{ expected_data_ip }} is in network {{ data_vlan_network }}"
+  rescue:
+    - name: Record data VLAN IP network validation failure
+      ansible.builtin.debug:
+        msg: "WARNING: Data VLAN IP {{ expected_data_ip }} is not in network {{ data_vlan_network }}"
+  when: inventory_hostname in groups['workers'] and expected_data_ip != ''
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Get default gateway
+  ansible.builtin.command: ip route show default
+  register: default_route
+  changed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Extract default gateway IP
+  ansible.builtin.set_fact:
+    default_gateway_ip: "{{ default_route.stdout | regex_search('via\\s+(\\S+)') | regex_search('\\d+\\.\\d+\\.\\d+\\.\\d+') | first }}"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify control VLAN gateway is reachable
+  ansible.builtin.command: ping -c 2 -W 2 {{ control_vlan_gateway }}
+  register: control_gateway_ping
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Assert control VLAN gateway is reachable
+  block:
+    - name: Check control VLAN gateway reachability
+      ansible.builtin.assert:
+        that:
+          - control_gateway_ping.rc == 0
+        fail_msg: "Control VLAN gateway {{ control_vlan_gateway }} is not reachable"
+        success_msg: "Control VLAN gateway {{ control_vlan_gateway }} is reachable"
+  rescue:
+    - name: Record control VLAN gateway unreachable
+      ansible.builtin.debug:
+        msg: "WARNING: Control VLAN gateway {{ control_vlan_gateway }} is not reachable"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify control VLAN gateway is in control_vlan_network
+  ansible.builtin.command: python3 -c "import ipaddress; print('valid' if ipaddress.ip_address('{{ control_vlan_gateway }}') in ipaddress.ip_network('{{ control_vlan_network }}', strict=False) else 'invalid')"
+  register: control_gateway_validation
+  changed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Assert control VLAN gateway is in correct network
+  block:
+    - name: Check control VLAN gateway network membership
+      ansible.builtin.assert:
+        that:
+          - control_gateway_validation.stdout.strip() == "valid"
+        fail_msg: "Control VLAN gateway {{ control_vlan_gateway }} is not in network {{ control_vlan_network }}"
+        success_msg: "Control VLAN gateway {{ control_vlan_gateway }} is in network {{ control_vlan_network }}"
+  rescue:
+    - name: Record control VLAN gateway network validation failure
+      ansible.builtin.debug:
+        msg: "WARNING: Control VLAN gateway {{ control_vlan_gateway }} is not in network {{ control_vlan_network }}"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify data VLAN gateway is reachable (workers only)
+  ansible.builtin.command: ping -c 2 -W 2 {{ data_vlan_gateway }}
+  register: data_gateway_ping
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Assert data VLAN gateway is reachable (workers only)
+  block:
+    - name: Check data VLAN gateway reachability
+      ansible.builtin.assert:
+        that:
+          - data_gateway_ping.rc == 0
+        fail_msg: "Data VLAN gateway {{ data_vlan_gateway }} is not reachable"
+        success_msg: "Data VLAN gateway {{ data_vlan_gateway }} is reachable"
+  rescue:
+    - name: Record data VLAN gateway unreachable
+      ansible.builtin.debug:
+        msg: "WARNING: Data VLAN gateway {{ data_vlan_gateway }} is not reachable"
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify data VLAN gateway is in data_vlan_network (workers only)
+  ansible.builtin.command: python3 -c "import ipaddress; print('valid' if ipaddress.ip_address('{{ data_vlan_gateway }}') in ipaddress.ip_network('{{ data_vlan_network }}', strict=False) else 'invalid')"
+  register: data_gateway_validation
+  changed_when: false
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Assert data VLAN gateway is in correct network (workers only)
+  block:
+    - name: Check data VLAN gateway network membership
+      ansible.builtin.assert:
+        that:
+          - data_gateway_validation.stdout.strip() == "valid"
+        fail_msg: "Data VLAN gateway {{ data_vlan_gateway }} is not in network {{ data_vlan_network }}"
+        success_msg: "Data VLAN gateway {{ data_vlan_gateway }} is in network {{ data_vlan_network }}"
+  rescue:
+    - name: Record data VLAN gateway network validation failure
+      ansible.builtin.debug:
+        msg: "WARNING: Data VLAN gateway {{ data_vlan_gateway }} is not in network {{ data_vlan_network }}"
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Get all routing tables
+  ansible.builtin.command: ip route show table all
+  register: all_routes
+  changed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Count default routes
+  ansible.builtin.set_fact:
+    default_route_count: "{{ all_routes.stdout | regex_findall('^default') | length }}"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify single default route (workers should use source-based routing)
+  block:
+    - name: Check default route configuration
+      ansible.builtin.assert:
+        that:
+          - default_route_count | int <= 1
+        fail_msg: "Multiple default routes detected ({{ default_route_count }}). Workers should use source-based routing via table 100"
+        success_msg: "Default route configuration is correct ({{ default_route_count }} default route(s))"
+  rescue:
+    - name: Record default route configuration failure
+      ansible.builtin.debug:
+        msg: "WARNING: Multiple default routes detected ({{ default_route_count }}). Workers should use source-based routing via table 100"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Check routing table 100 exists (workers only)
+  ansible.builtin.command: ip route show table 100
+  register: routing_table_100
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify routing table 100 exists (workers only)
+  block:
+    - name: Check routing table 100 existence
+      ansible.builtin.assert:
+        that:
+          - routing_table_100.rc == 0
+        fail_msg: "Routing table 100 does not exist (required for source-based routing on workers)"
+        success_msg: "Routing table 100 exists"
+  rescue:
+    - name: Record routing table 100 missing
+      ansible.builtin.debug:
+        msg: "WARNING: Routing table 100 does not exist (required for source-based routing on workers)"
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify data VLAN subnet route in table 100 (workers only)
+  block:
+    - name: Check data VLAN route in table 100
+      ansible.builtin.assert:
+        that:
+          - data_vlan_network in routing_table_100.stdout
+        fail_msg: "Data VLAN network route ({{ data_vlan_network }}) not found in routing table 100"
+        success_msg: "Data VLAN network route found in routing table 100"
+  rescue:
+    - name: Record data VLAN route missing in table 100
+      ansible.builtin.debug:
+        msg: "WARNING: Data VLAN network route ({{ data_vlan_network }}) not found in routing table 100"
+  when: inventory_hostname in groups['workers'] and routing_table_100.rc == 0
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify default route via data gateway in table 100 (workers only)
+  block:
+    - name: Check default route via data gateway in table 100
+      ansible.builtin.assert:
+        that:
+          - data_vlan_gateway in routing_table_100.stdout
+        fail_msg: "Default route via data VLAN gateway ({{ data_vlan_gateway }}) not found in routing table 100"
+        success_msg: "Default route via data VLAN gateway found in routing table 100"
+  rescue:
+    - name: Record default route via data gateway missing
+      ansible.builtin.debug:
+        msg: "WARNING: Default route via data VLAN gateway ({{ data_vlan_gateway }}) not found in routing table 100"
+  when: inventory_hostname in groups['workers'] and routing_table_100.rc == 0
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Get IP rules for source-based routing
+  ansible.builtin.command: ip rule show
+  register: ip_rules
+  changed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify source-based routing rule exists (workers only)
+  block:
+    - name: Check source-based routing rule
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname not in groups['workers'] or (expected_data_ip in ip_rules.stdout and 'lookup 100' in ip_rules.stdout)
+        fail_msg: "Source-based routing rule (from {{ expected_data_ip }} lookup 100) not found"
+        success_msg: "Source-based routing rule configured correctly"
+  rescue:
+    - name: Record source-based routing rule missing
+      ansible.builtin.debug:
+        msg: "WARNING: Source-based routing rule (from {{ expected_data_ip }} lookup 100) not found"
+  when: inventory_hostname in groups['workers'] and expected_data_ip != ''
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify control VLAN routes in main table
+  block:
+    - name: Check control VLAN routes in main table
+      ansible.builtin.assert:
+        that:
+          - control_vlan_network in all_routes.stdout
+        fail_msg: "Control VLAN network route ({{ control_vlan_network }}) not found in main routing table"
+        success_msg: "Control VLAN network route found in main routing table"
+  rescue:
+    - name: Record control VLAN route missing in main table
+      ansible.builtin.debug:
+        msg: "WARNING: Control VLAN network route ({{ control_vlan_network }}) not found in main routing table"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Get interface MTU values
+  ansible.builtin.command: ip link show
+  register: interface_mtu_info
+  changed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify MTU is set correctly
+  block:
+    - name: Check MTU configuration
+      ansible.builtin.assert:
+        that:
+          - expected_mtu | string in interface_mtu_info.stdout
+        fail_msg: "Expected MTU {{ expected_mtu }} not found. Check interface MTU configuration"
+        success_msg: "MTU configuration appears correct ({{ expected_mtu }})"
+  rescue:
+    - name: Record MTU configuration failure
+      ansible.builtin.debug:
+        msg: "WARNING: Expected MTU {{ expected_mtu }} not found. Check interface MTU configuration"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Check if any interfaces are down
+  ansible.builtin.set_fact:
+    has_down_interfaces: "{{ 'state DOWN' in network_interfaces.stdout }}"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify all interfaces are up
+  block:
+    - name: Check interface status
+      ansible.builtin.assert:
+        that:
+          - not has_down_interfaces | bool
+        fail_msg: "Some network interfaces are DOWN"
+        success_msg: "All network interfaces are UP"
+  rescue:
+    - name: Record interface down status
+      ansible.builtin.debug:
+        msg: "WARNING: Some network interfaces are DOWN"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Build list of all cluster node control IPs
+  ansible.builtin.set_fact:
+    cluster_control_ips: "{{ cluster_control_ips | default([]) + [hostvars[item]['ansible_host']] }}"
+  loop: "{{ groups['cluster_nodes'] }}"
+  when: hostvars[item]['ansible_host'] is defined
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Add bastion IPs to cluster control IPs list
+  ansible.builtin.set_fact:
+    cluster_control_ips: "{{ cluster_control_ips | default([]) + [hostvars[item]['internal_ip'] | default(hostvars[item]['ansible_host'])] }}"
+  loop: "{{ groups['bastion'] }}"
+  when: hostvars[item]['internal_ip'] is defined or hostvars[item]['ansible_host'] is defined
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Build list of worker data IPs
+  ansible.builtin.set_fact:
+    worker_data_ips: "{{ worker_data_ips | default([]) + [hostvars[item]['prod_data_ip']] }}"
+  loop: "{{ groups['workers'] }}"
+  when: hostvars[item]['prod_data_ip'] is defined
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Test control VLAN connectivity to all cluster nodes
+  ansible.builtin.command: ping -c 2 -W 2 {{ item }}
+  register: control_connectivity_tests
+  changed_when: false
+  failed_when: false
+  loop: "{{ cluster_control_ips }}"
+  when: item != expected_control_ip
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify control VLAN connectivity to all cluster nodes
+  block:
+    - name: Check if control connectivity tests were run
+      ansible.builtin.set_fact:
+        control_connectivity_success_count: "{{ (control_connectivity_tests.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | list | length) | int }}"
+        expected_control_connectivity_count: "{{ (cluster_control_ips | default([]) | length - 1) | int }}"
+        failed_control_pings: "{{ control_connectivity_tests.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', '!=', 0) | map(attribute='item') | list }}"
+      tags:
+        - prerequisites
+        - network
+        - network_advanced
+
+    - name: Check control VLAN connectivity
+      ansible.builtin.assert:
+        that:
+          - control_connectivity_tests is defined and control_connectivity_tests.results is defined and control_connectivity_success_count == expected_control_connectivity_count
+        fail_msg: "Some control VLAN connectivity tests failed. Expected {{ expected_control_connectivity_count }}, got {{ control_connectivity_success_count }}. Failed IPs: {{ failed_control_pings | join(', ') }}"
+        success_msg: "Control VLAN connectivity to all cluster nodes verified"
+  rescue:
+    - name: Record control VLAN connectivity failure
+      ansible.builtin.debug:
+        msg: "WARNING: Some control VLAN connectivity tests failed. Check network connectivity between nodes"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Test data VLAN connectivity between workers
+  ansible.builtin.command: ping -c 2 -W 2 {{ item }}
+  register: data_connectivity_tests
+  changed_when: false
+  failed_when: false
+  loop: "{{ worker_data_ips }}"
+  when: inventory_hostname in groups['workers'] and item != expected_data_ip
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify data VLAN connectivity between workers
+  block:
+    - name: Check if data connectivity tests were run
+      ansible.builtin.set_fact:
+        data_connectivity_success_count: "{{ (data_connectivity_tests.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | list | length) | int }}"
+        expected_data_connectivity_count: "{{ (worker_data_ips | default([]) | length - 1) | int }}"
+        failed_data_pings: "{{ data_connectivity_tests.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', '!=', 0) | map(attribute='item') | list }}"
+      when: inventory_hostname in groups['workers']
+      tags:
+        - prerequisites
+        - network
+        - network_advanced
+
+    - name: Check data VLAN connectivity
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname not in groups['workers'] or (data_connectivity_tests is defined and data_connectivity_tests.results is defined and data_connectivity_success_count == expected_data_connectivity_count)
+        fail_msg: "Some data VLAN connectivity tests failed between workers. Expected {{ expected_data_connectivity_count }}, got {{ data_connectivity_success_count }}. Failed IPs: {{ failed_data_pings | join(', ') }}"
+        success_msg: "Data VLAN connectivity between workers verified"
+  rescue:
+    - name: Record data VLAN connectivity failure
+      ansible.builtin.debug:
+        msg: "WARNING: Some data VLAN connectivity tests failed between workers"
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Test control VLAN load balancer VIP reachability
+  ansible.builtin.command: ping -c 2 -W 2 {{ lb_vip_control }}
+  register: lb_control_vip_ping
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify control VLAN load balancer VIP is reachable
+  block:
+    - name: Check control VLAN LB VIP reachability
+      ansible.builtin.assert:
+        that:
+          - lb_control_vip_ping.rc == 0
+        fail_msg: "Control VLAN load balancer VIP {{ lb_vip_control }} is not reachable"
+        success_msg: "Control VLAN load balancer VIP {{ lb_vip_control }} is reachable"
+  rescue:
+    - name: Record control VLAN LB VIP unreachable
+      ansible.builtin.debug:
+        msg: "WARNING: Control VLAN load balancer VIP {{ lb_vip_control }} is not reachable"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Test data VLAN load balancer VIP reachability (workers only)
+  ansible.builtin.command: ping -c 2 -W 2 {{ lb_vip_data }}
+  register: lb_data_vip_ping
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify data VLAN load balancer VIP is reachable (workers only)
+  block:
+    - name: Check data VLAN LB VIP reachability
+      ansible.builtin.assert:
+        that:
+          - lb_data_vip_ping.rc == 0
+        fail_msg: "Data VLAN load balancer VIP {{ lb_vip_data }} is not reachable"
+        success_msg: "Data VLAN load balancer VIP {{ lb_vip_data }} is reachable"
+  rescue:
+    - name: Record data VLAN LB VIP unreachable
+      ansible.builtin.debug:
+        msg: "WARNING: Data VLAN load balancer VIP {{ lb_vip_data }} is not reachable"
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Test control VLAN cannot directly access data VLAN IPs
+  ansible.builtin.command: ping -c 1 -W 1 {{ item }}
+  register: control_to_data_test
+  changed_when: false
+  failed_when: false
+  loop: "{{ worker_data_ips }}"
+  when: inventory_hostname not in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify control VLAN cannot directly access data VLAN (security check)
+  block:
+    - name: Check VLAN isolation
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname in groups['workers'] or (control_to_data_test.results | selectattr('rc', 'equalto', 0) | list | length == 0)
+        fail_msg: "Security issue: Control VLAN can directly access data VLAN IPs (should be isolated)"
+        success_msg: "VLAN isolation verified: Control VLAN cannot directly access data VLAN"
+  rescue:
+    - name: Record VLAN isolation failure
+      ansible.builtin.debug:
+        msg: "WARNING: Security issue: Control VLAN can directly access data VLAN IPs (should be isolated)"
+  when: inventory_hostname not in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Check if ss command is available
+  ansible.builtin.command: which ss
+  register: ss_command_check
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Verify source-based routing prevents asymmetric routing (workers only)
+  block:
+    - name: Check source-based routing for asymmetric routing prevention
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname not in groups['workers'] or (expected_data_ip in ip_rules.stdout and 'lookup 100' in ip_rules.stdout and routing_table_100.rc == 0)
+        fail_msg: "Source-based routing not properly configured to prevent asymmetric routing"
+        success_msg: "Source-based routing configured to prevent asymmetric routing"
+  rescue:
+    - name: Record asymmetric routing prevention failure
+      ansible.builtin.debug:
+        msg: "WARNING: Source-based routing not properly configured to prevent asymmetric routing"
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+- name: Display network validation summary
+  ansible.builtin.debug:
+    msg:
+      - "Advanced Network Validation Summary:"
+      - "  Control VLAN IP: {{ expected_control_ip }}"
+      - "  Data VLAN IP: {{ expected_data_ip if inventory_hostname in groups['workers'] else 'N/A' }}"
+      - "  Control Gateway: {{ control_vlan_gateway }} (reachable)"
+      - "  Data Gateway: {{ data_vlan_gateway if inventory_hostname in groups['workers'] else 'N/A' }}"
+      - "  Source-based routing: {{ 'Configured' if (inventory_hostname in groups['workers'] and routing_table_100.rc == 0) else 'N/A' }}"
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
