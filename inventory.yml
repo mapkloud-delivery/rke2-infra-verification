@@ -1,70 +1,69 @@
-#SPDX-License-Identifier: MIT-0
 ---
 all:
   vars:
+    ansible_python_interpreter: /usr/bin/python3
     # Network plan configuration
     control_vlan_network: "10.21.126.0/16"
     control_vlan_gateway: "10.21.126.1"
     data_vlan_network: "10.21.124.0/16"
     data_vlan_gateway: "10.21.124.1"
     # Load balancer VIPs
-    lb_vip_control: "10.21.126.50"
-    lb_vip_data: "10.21.124.50"
+    lb_vip_control: "10.21.126.3"
+    lb_vip_data: "10.21.124.2"
   children:
     bastion:
       hosts:
         bastion-host:
-          ansible_host: 10.21.126.10
+          ansible_host: 10.21.126.8
           ansible_hostname: rke2-cluster-bastion
           ansible_user: ubuntu
-          ansible_ssh_private_key_file: ~/.ssh/ssh_rke2_key
-          internal_ip: 10.21.126.10
+          ansible_ssh_private_key_file: ~/.ssh/gcp_rke2_key
+          internal_ip: 10.21.126.8
     masters:
       hosts:
         master-1:
-          ansible_host: 10.21.126.11
+          ansible_host: 10.21.126.6
           ansible_hostname: rke2-cluster-master-1
           ansible_user: ubuntu
-          ansible_ssh_private_key_file: ~/.ssh/ssh_rke2_key
+          ansible_ssh_private_key_file: ~/.ssh/gcp_rke2_key
         master-2:
-          ansible_host: 10.21.126.12
+          ansible_host: 10.21.126.5
           ansible_hostname: rke2-cluster-master-2
           ansible_user: ubuntu
-          ansible_ssh_private_key_file: ~/.ssh/ssh_rke2_key
+          ansible_ssh_private_key_file: ~/.ssh/gcp_rke2_key
         master-3:
-          ansible_host: 10.21.126.13
+          ansible_host: 10.21.126.10
           ansible_hostname: rke2-cluster-master-3
           ansible_user: ubuntu
-          ansible_ssh_private_key_file: ~/.ssh/ssh_rke2_key
+          ansible_ssh_private_key_file: ~/.ssh/gcp_rke2_key
       vars:
         node_type: master
     workers:
       hosts:
         worker-1:
-          ansible_host: 10.21.126.14
+          ansible_host: 10.21.126.9
           ansible_hostname: rke2-cluster-worker-1
           ansible_user: ubuntu
-          ansible_ssh_private_key_file: ~/.ssh/ssh_rke2_key
-          mgmt_ip: 10.21.126.14
-          prod_data_ip: 10.21.124.21
+          ansible_ssh_private_key_file: ~/.ssh/gcp_rke2_key
+          mgmt_ip: 10.21.126.9
+          prod_data_ip: 10.21.124.4
         worker-2:
-          ansible_host: 10.21.126.15
+          ansible_host: 10.21.126.4
           ansible_hostname: rke2-cluster-worker-2
           ansible_user: ubuntu
-          ansible_ssh_private_key_file: ~/.ssh/ssh_rke2_key
-          mgmt_ip: 10.21.126.15
-          prod_data_ip: 10.21.124.22
+          ansible_ssh_private_key_file: ~/.ssh/gcp_rke2_key
+          mgmt_ip: 10.21.126.4
+          prod_data_ip: 10.21.124.2
         worker-3:
-          ansible_host: 10.21.126.16
+          ansible_host: 10.21.126.7
           ansible_hostname: rke2-cluster-worker-3
           ansible_user: ubuntu
-          ansible_ssh_private_key_file: ~/.ssh/ssh_rke2_key
-          mgmt_ip: 10.21.126.16
-          prod_data_ip: 10.21.124.23
+          ansible_ssh_private_key_file: ~/.ssh/gcp_rke2_key
+          mgmt_ip: 10.21.126.7
+          prod_data_ip: 10.21.124.3
       vars:
         node_type: worker
     cluster_nodes:
       children:
         masters:
         workers:
-

@@ -42,7 +42,14 @@
 
 - name: Set minimum disk space based on node type
   ansible.builtin.set_fact:
-    min_disk_gb: "{{ min_disk_gb_master if inventory_hostname in groups['masters'] else min_disk_gb_worker }}"
+    min_disk_gb: >-
+      {% if inventory_hostname in groups['bastion'] %}
+        {{ min_disk_gb_bastion }}
+      {% elif inventory_hostname in groups['masters'] %}
+        {{ min_disk_gb_master }}
+      {% else %}
+        {{ min_disk_gb_worker }}
+      {% endif %}
   tags:
     - prerequisites
     - disk

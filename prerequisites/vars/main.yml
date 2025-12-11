@@ -5,15 +5,20 @@
 # MTU settings
 expected_mtu: 1500  # Adjust if using jumbo frames
 
+# Minimum system requirements - Bastion host
+min_cpu_cores_bastion: 1
+min_memory_gb_bastion: 1
+min_disk_gb_bastion: 10
+
 # Minimum system requirements - Master nodes
-min_cpu_cores_master: 8
-min_memory_gb_master: 12
-min_disk_gb_master: 80
+min_cpu_cores_master: 2
+min_memory_gb_master: 2
+min_disk_gb_master: 20
 
 # Minimum system requirements - Worker nodes
-min_cpu_cores_worker: 12
-min_memory_gb_worker: 24
-min_disk_gb_worker: 100
+min_cpu_cores_worker: 2
+min_memory_gb_worker: 3
+min_disk_gb_worker: 20
 
 # Default data directory for RKE2 installation.
 # Being checked for disk space requirements.
