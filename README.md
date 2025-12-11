@@ -50,6 +50,9 @@ pip3 install ansible
 # RHEL/CentOS için
 sudo yum install -y python3-pip
 pip3 install ansible
+
+# Add ansible to $PATH
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 ## Kullanım
