@@ -1,0 +1,97 @@
+#SPDX-License-Identifier: MIT-0
+---
+# System Requirements Validation
+# Checks OS version, architecture, and kernel version
+
+- name: Gather system facts
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!any'
+      - system
+      - distribution
+
+- name: Check OS family
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian" or ansible_os_family == "RedHat"
+    fail_msg: "Unsupported OS family: {{ ansible_os_family }}. Supported: Debian, RedHat"
+    success_msg: "OS family check passed: {{ ansible_os_family }}"
+  tags:
+    - prerequisites
+    - system
+
+- name: Check OS distribution
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution in ['Ubuntu', 'Debian', 'CentOS', 'RHEL', 'Rocky', 'AlmaLinux']
+    fail_msg: "Unsupported distribution: {{ ansible_distribution }}"
+    success_msg: "Distribution check passed: {{ ansible_distribution }}"
+  tags:
+    - prerequisites
+    - system
+
+- name: Check OS version (Ubuntu/Debian)
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution_major_version|int >= 20
+    fail_msg: "Ubuntu/Debian version {{ ansible_distribution_version }} is too old. Minimum: 20.04/10"
+    success_msg: "OS version check passed: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - system
+
+- name: Check OS version (RHEL/CentOS/Rocky/AlmaLinux)
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution_major_version|int >= 8
+    fail_msg: "RHEL/CentOS/Rocky/AlmaLinux version {{ ansible_distribution_version }} is too old. Minimum: 8"
+    success_msg: "OS version check passed: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+  when: ansible_os_family == "RedHat"
+  tags:
+    - prerequisites
+    - system
+
+- name: Check system architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_architecture in ['x86_64', 'amd64', 'aarch64', 'arm64']
+    fail_msg: "Unsupported architecture: {{ ansible_architecture }}. Supported: x86_64, amd64, aarch64, arm64"
+    success_msg: "Architecture check passed: {{ ansible_architecture }}"
+  tags:
+    - prerequisites
+    - system
+
+- name: Get kernel version
+  ansible.builtin.command: uname -r
+  register: kernel_version_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - system
+
+- name: Check kernel version meets minimum requirement
+  ansible.builtin.assert:
+    that:
+      - kernel_version_result.stdout is version(required_kernel_version, '>=')
+    fail_msg: "Kernel version {{ kernel_version_result.stdout }} is too old. Minimum required: {{ required_kernel_version }}"
+    success_msg: "Kernel version check passed: {{ kernel_version_result.stdout }}"
+  vars:
+    required_kernel_version: "{{ min_kernel_version }}"
+  tags:
+    - prerequisites
+    - system
+
+- name: Display system information summary
+  ansible.builtin.debug:
+    msg:
+      - "System Information:"
+      - "  OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+      - "  Architecture: {{ ansible_architecture }}"
+      - "  Kernel: {{ kernel_version_result.stdout }}"
+      - "  Hostname: {{ ansible_hostname }}"
+  tags:
+    - prerequisites
+    - system
+

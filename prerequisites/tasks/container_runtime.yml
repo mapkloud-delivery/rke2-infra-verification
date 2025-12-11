@@ -1,0 +1,157 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Container Runtime Prerequisites Validation
+# Checks cgroup configuration, swap, and container runtime requirements
+
+- name: Check cgroup version
+  ansible.builtin.stat:
+    path: /sys/fs/cgroup/cgroup.controllers
+  register: cgroup_v2_check
+  tags:
+    - prerequisites
+    - container
+
+- name: Determine cgroup version
+  ansible.builtin.set_fact:
+    cgroup_version: "v2"
+  when: cgroup_v2_check.stat.exists
+  tags:
+    - prerequisites
+    - container
+
+- name: Set cgroup version to v1 if v2 not found
+  ansible.builtin.set_fact:
+    cgroup_version: "v1"
+  when: not cgroup_v2_check.stat.exists
+  tags:
+    - prerequisites
+    - container
+
+- name: Check cgroup controllers (v2)
+  ansible.builtin.command: cat /sys/fs/cgroup/cgroup.controllers
+  register: cgroup_controllers_result
+  changed_when: false
+  failed_when: false
+  when: cgroup_version == "v2"
+  tags:
+    - prerequisites
+    - container
+
+- name: Verify required cgroup controllers (v2)
+  ansible.builtin.assert:
+    that:
+      - "'memory' in cgroup_controllers_result.stdout"
+      - "'cpu' in cgroup_controllers_result.stdout"
+      - "'io' in cgroup_controllers_result.stdout"
+    fail_msg: "Required cgroup controllers missing. Found: {{ cgroup_controllers_result.stdout }}"
+    success_msg: "Cgroup controllers check passed: {{ cgroup_controllers_result.stdout }}"
+  when: cgroup_version == "v2"
+  tags:
+    - prerequisites
+    - container
+
+- name: Check swap is disabled
+  ansible.builtin.command: swapon --show
+  register: swap_status_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - container
+
+- name: Verify swap is disabled
+  ansible.builtin.assert:
+    that:
+      - swap_status_result.stdout == ""
+    fail_msg: "Swap is enabled. RKE2 requires swap to be disabled. Current swap: {{ swap_status_result.stdout }}"
+    success_msg: "Swap check passed: Swap is disabled"
+  tags:
+    - prerequisites
+    - container
+
+- name: Check if swap is in /etc/fstab
+  ansible.builtin.command: grep -E "^[^#].*swap" /etc/fstab
+  register: swap_fstab_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - container
+
+- name: Warn if swap entry exists in fstab
+  ansible.builtin.debug:
+    msg: "WARNING: Swap entry found in /etc/fstab. Ensure swap is disabled and entry is commented out or removed."
+  when: swap_fstab_result.rc == 0
+  tags:
+    - prerequisites
+    - container
+
+- name: Check if containerd is already installed
+  ansible.builtin.command: which containerd
+  register: containerd_check_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - container
+
+- name: Check containerd version if installed
+  ansible.builtin.command: containerd --version
+  register: containerd_version_result
+  changed_when: false
+  failed_when: false
+  when: containerd_check_result.rc == 0
+  tags:
+    - prerequisites
+    - container
+
+- name: Check if Docker is installed (should not be for RKE2)
+  ansible.builtin.command: which docker
+  register: docker_check_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - container
+
+- name: Warn if Docker is installed
+  ansible.builtin.debug:
+    msg: "WARNING: Docker is installed. RKE2 uses containerd. Docker may cause conflicts."
+  when: docker_check_result.rc == 0
+  tags:
+    - prerequisites
+    - container
+
+- name: Check if Docker service is running
+  ansible.builtin.command: systemctl is-active docker
+  register: docker_service_result
+  changed_when: false
+  failed_when: false
+  when: docker_check_result.rc == 0
+  tags:
+    - prerequisites
+    - container
+
+- name: Warn if Docker service is active
+  ansible.builtin.debug:
+    msg: "WARNING: Docker service is running. Consider stopping it before RKE2 installation."
+  when:
+    - docker_check_result.rc == 0
+    - docker_service_result.stdout == "active"
+  tags:
+    - prerequisites
+    - container
+
+- name: Display container runtime information summary
+  ansible.builtin.debug:
+    msg:
+      - "Container Runtime Prerequisites:"
+      - "  Cgroup Version: {{ cgroup_version }}"
+      - "  Swap Status: {{ 'Disabled' if swap_status_result.stdout == '' else 'Enabled (WARNING)' }}"
+      - "  containerd Installed: {{ 'Yes' if containerd_check_result.rc == 0 else 'No (will be installed by RKE2)' }}"
+      - "  containerd Version: {{ containerd_version_result.stdout | default('N/A') }}"
+      - "  Docker Installed: {{ 'Yes (WARNING)' if docker_check_result.rc == 0 else 'No' }}"
+  tags:
+    - prerequisites
+    - container
+

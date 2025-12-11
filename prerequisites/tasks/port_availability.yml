@@ -1,0 +1,102 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Port Availability Validation
+# Checks if required ports are available and not in use
+
+- name: Check if netstat or ss command is available
+  ansible.builtin.command: which ss
+  register: ss_command_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - ports
+
+- name: Set port check command
+  ansible.builtin.set_fact:
+    port_check_cmd: "ss -tuln"
+  when: ss_command_result.rc == 0
+  tags:
+    - prerequisites
+    - ports
+
+- name: Set port check command (fallback to netstat)
+  ansible.builtin.set_fact:
+    port_check_cmd: "netstat -tuln"
+  when: ss_command_result.rc != 0
+  tags:
+    - prerequisites
+    - ports
+
+- name: Get list of listening ports
+  ansible.builtin.command: "{{ port_check_cmd }}"
+  register: listening_ports_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - ports
+
+- name: Extract listening ports
+  ansible.builtin.set_fact:
+    listening_ports: "{{ listening_ports_result.stdout_lines | select('match', '.*:([0-9]+).*') | map('regex_replace', '.*:([0-9]+).*', '\\1') | list | unique }}"
+  tags:
+    - prerequisites
+    - ports
+
+- name: Check required ports are available (TCP)
+  ansible.builtin.assert:
+    that:
+      - item.port | string not in listening_ports
+    fail_msg: "Required port {{ item.port }}/{{ item.protocol }} is already in use ({{ item.description }})"
+    success_msg: "Port {{ item.port }}/{{ item.protocol }} is available ({{ item.description }})"
+  loop: "{{ required_ports | selectattr('protocol', 'equalto', 'tcp') | list }}"
+  when: item.port | string not in listening_ports
+  tags:
+    - prerequisites
+    - ports
+
+- name: Check required ports are available (UDP)
+  ansible.builtin.assert:
+    that:
+      - item.port | string not in listening_ports
+    fail_msg: "Required port {{ item.port }}/{{ item.protocol }} may be in use ({{ item.description }})"
+    success_msg: "Port {{ item.port }}/{{ item.protocol }} appears available ({{ item.description }})"
+  loop: "{{ required_ports | selectattr('protocol', 'equalto', 'udp') | list }}"
+  when: item.port | string not in listening_ports
+  tags:
+    - prerequisites
+    - ports
+
+- name: Check Kubernetes API port (6443) specifically
+  ansible.builtin.assert:
+    that:
+      - ("6443" not in listening_ports)
+    fail_msg: "Port 6443 (Kubernetes API) is already in use. Another Kubernetes cluster may be running."
+    success_msg: "Port 6443 (Kubernetes API) is available"
+  tags:
+    - prerequisites
+    - ports
+
+- name: Check etcd ports (2379, 2380) specifically
+  ansible.builtin.assert:
+    that:
+      - ("2379" not in listening_ports)
+      - ("2380" not in listening_ports)
+    fail_msg: "etcd ports (2379/2380) are in use. Another etcd instance may be running."
+    success_msg: "etcd ports (2379/2380) are available"
+  when: inventory_hostname in groups['masters']
+  tags:
+    - prerequisites
+    - ports
+
+- name: Display port availability summary
+  ansible.builtin.debug:
+    msg:
+      - "Port Availability Summary:"
+      - "  Total listening ports: {{ listening_ports | length }}"
+      - "  Required ports checked: {{ required_ports | length }}"
+      - "  Critical ports (6443, 2379, 2380): Available"
+  tags:
+    - prerequisites
+    - ports
+

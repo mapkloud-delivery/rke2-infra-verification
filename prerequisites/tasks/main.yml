@@ -1,0 +1,286 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for prerequisites
+
+# Display a message indicating the start of prerequisites validation
+- name: Display prerequisites check start message
+  ansible.builtin.debug:
+    msg: "Starting prerequisites validation for {{ inventory_hostname }}"
+
+# Initialize failure tracking if not already set
+- name: Initialize failure tracking
+  ansible.builtin.set_fact:
+    prerequisites_failures: "{{ prerequisites_failures | default([]) }}"
+  tags:
+    - prerequisites
+
+# Include tasks to validate basic system requirements (OS, kernel, architecture)
+- name: Run system requirements checks
+  block:
+    - name: Include system requirements checks
+      ansible.builtin.include_tasks: system_requirements.yml
+      tags:
+        - prerequisites
+        - system
+  rescue:
+    - name: Record system requirements check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['System Requirements'] }}"
+      tags:
+        - prerequisites
+        - system
+  tags:
+    - prerequisites
+    - system
+
+# Include tasks to validate minimum CPU cores and processor type
+- name: Run CPU requirements checks
+  block:
+    - name: Include CPU requirements checks
+      ansible.builtin.include_tasks: cpu_requirements.yml
+      tags:
+        - prerequisites
+        - cpu
+  rescue:
+    - name: Record CPU requirements check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['CPU Requirements'] }}"
+      tags:
+        - prerequisites
+        - cpu
+  tags:
+    - prerequisites
+    - cpu
+
+# Memory requirements validation: checks total and available RAM.
+- name: Run memory requirements checks
+  block:
+    - name: Include memory requirements checks
+      ansible.builtin.include_tasks: memory_requirements.yml
+      tags:
+        - prerequisites
+        - memory
+  rescue:
+    - name: Record memory requirements check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Memory Requirements'] }}"
+      tags:
+        - prerequisites
+        - memory
+  tags:
+    - prerequisites
+    - memory
+
+# Disk space requirements validation: checks available space on root and /var filesystems.
+- name: Run disk space requirements checks
+  block:
+    - name: Include disk space requirements checks
+      ansible.builtin.include_tasks: disk_requirements.yml
+      tags:
+        - prerequisites
+        - disk
+  rescue:
+    - name: Record disk space requirements check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Disk Space Requirements'] }}"
+      tags:
+        - prerequisites
+        - disk
+  tags:
+    - prerequisites
+    - disk
+
+# Network connectivity validation: checks reachability of cluster nodes,
+# DNS resolution, and verifies critical network interfaces
+- name: Run network connectivity checks
+  block:
+    - name: Include network connectivity checks
+      ansible.builtin.include_tasks: network_connectivity.yml
+      tags:
+        - prerequisites
+        - network
+  rescue:
+    - name: Record network connectivity check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Network Connectivity'] }}"
+      tags:
+        - prerequisites
+        - network
+  tags:
+    - prerequisites
+    - network
+
+# Advanced network validation: checks dual-VLAN configuration, routing,
+# source-based routing, and network segmentation for enterprise RKE2 setup
+- name: Run advanced network validation checks
+  block:
+    - name: Include advanced network validation checks
+      ansible.builtin.include_tasks: network_advanced.yml
+      tags:
+        - prerequisites
+        - network
+        - network_advanced
+  rescue:
+    - name: Record advanced network validation check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Advanced Network Validation'] }}"
+      tags:
+        - prerequisites
+        - network
+        - network_advanced
+  tags:
+    - prerequisites
+    - network
+    - network_advanced
+
+# Port Availability Validation: Checks that all required ports for Kubernetes components
+- name: Run port availability checks
+  block:
+    - name: Include port availability checks
+      ansible.builtin.include_tasks: port_availability.yml
+      tags:
+        - prerequisites
+        - ports
+  rescue:
+    - name: Record port availability check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Port Availability'] }}"
+      tags:
+        - prerequisites
+        - ports
+  tags:
+    - prerequisites
+    - ports
+
+# Firewall rules validation: checks the status of system firewalls,
+- name: Run firewall rules checks
+  block:
+    - name: Include firewall rules checks
+      ansible.builtin.include_tasks: firewall_checks.yml
+      tags:
+        - prerequisites
+        - firewall
+  rescue:
+    - name: Record firewall rules check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Firewall Rules'] }}"
+      tags:
+        - prerequisites
+        - firewall
+  tags:
+    - prerequisites
+    - firewall
+
+# Container runtime prerequisites validation: checks cgroup version, swap, and container runtime configuration required for Kubernetes.
+- name: Run container runtime prerequisites checks
+  block:
+    - name: Include container runtime prerequisites checks
+      ansible.builtin.include_tasks: container_runtime.yml
+      tags:
+        - prerequisites
+        - container
+  rescue:
+    - name: Record container runtime prerequisites check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Container Runtime Prerequisites'] }}"
+      tags:
+        - prerequisites
+        - container
+  tags:
+    - prerequisites
+    - container
+
+# Kernel modules prerequisites validation: verifies that all required kernel modules for Kubernetes can be loaded.
+- name: Run kernel modules checks
+  block:
+    - name: Include kernel modules checks
+      ansible.builtin.include_tasks: kernel_modules.yml
+      tags:
+        - prerequisites
+        - kernel
+  rescue:
+    - name: Record kernel modules check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Kernel Modules'] }}"
+      tags:
+        - prerequisites
+        - kernel
+  tags:
+    - prerequisites
+    - kernel
+
+# Time Synchronization Validation: ensures NTP/chronyd/systemd-timesyncd is running and system time is in sync
+- name: Run time synchronization checks
+  block:
+    - name: Include time synchronization checks
+      ansible.builtin.include_tasks: time_sync.yml
+      tags:
+        - prerequisites
+        - time
+  rescue:
+    - name: Record time synchronization check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Time Synchronization'] }}"
+      tags:
+        - prerequisites
+        - time
+  tags:
+    - prerequisites
+    - time
+
+# SSH access validation: Checks SSH service status and configuration.
+- name: Run SSH access checks
+  block:
+    - name: Include SSH access checks
+      ansible.builtin.include_tasks: ssh_access.yml
+      tags:
+        - prerequisites
+        - ssh
+  rescue:
+    - name: Record SSH access check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['SSH Access'] }}"
+      tags:
+        - prerequisites
+        - ssh
+  tags:
+    - prerequisites
+    - ssh
+
+# User permissions validation: Verifies sudo access, user groups, and home directory.
+- name: Run user permissions checks
+  block:
+    - name: Include user permissions checks
+      ansible.builtin.include_tasks: user_permissions.yml
+      tags:
+        - prerequisites
+        - permissions
+  rescue:
+    - name: Record user permissions check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['User Permissions'] }}"
+      tags:
+        - prerequisites
+        - permissions
+  tags:
+    - prerequisites
+    - permissions
+
+# Package manager validation: Checks OS supported package manager and installability.
+- name: Run package manager checks
+  block:
+    - name: Include package manager checks
+      ansible.builtin.include_tasks: package_manager.yml
+      tags:
+        - prerequisites
+        - packages
+  rescue:
+    - name: Record package manager check failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['Package Manager'] }}"
+      tags:
+        - prerequisites
+        - packages
+  tags:
+    - prerequisites
+    - packages

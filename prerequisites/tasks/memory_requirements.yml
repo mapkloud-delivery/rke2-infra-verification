@@ -1,0 +1,86 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Memory Requirements Validation
+# Checks total RAM and available memory
+
+- name: Gather memory facts
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!any'
+      - hardware
+
+- name: Get total memory in MB
+  ansible.builtin.set_fact:
+    total_memory_mb: "{{ ansible_memtotal_mb | int }}"
+  tags:
+    - prerequisites
+    - memory
+
+- name: Get total memory in GB
+  ansible.builtin.set_fact:
+    total_memory_gb: "{{ (ansible_memtotal_mb | int / 1024) | round(2) }}"
+  tags:
+    - prerequisites
+    - memory
+
+- name: Get available memory in MB
+  ansible.builtin.set_fact:
+    available_memory_mb: "{{ ansible_memfree_mb | int }}"
+  tags:
+    - prerequisites
+    - memory
+
+- name: Set minimum memory based on node type
+  ansible.builtin.set_fact:
+    min_memory_gb: "{{ min_memory_gb_master if inventory_hostname in groups['masters'] else min_memory_gb_worker }}"
+  tags:
+    - prerequisites
+    - memory
+
+- name: Check minimum memory requirement (GB)
+  ansible.builtin.assert:
+    that:
+      - total_memory_gb|float >= (min_memory_gb | float)
+    fail_msg: "Insufficient memory: {{ total_memory_gb }}GB. Minimum required: {{ min_memory_gb }}GB"
+    success_msg: "Memory check passed: {{ total_memory_gb }}GB total (minimum: {{ min_memory_gb }}GB)"
+  tags:
+    - prerequisites
+    - memory
+
+- name: Check available memory (at least 2GB free)
+  ansible.builtin.assert:
+    that:
+      - available_memory_mb|int >= 2048
+    fail_msg: "Insufficient available memory: {{ available_memory_mb }}MB. Need at least 2GB free"
+    success_msg: "Available memory check passed: {{ available_memory_mb }}MB free"
+  tags:
+    - prerequisites
+    - memory
+
+- name: Get swap information
+  ansible.builtin.command: free -m
+  register: swap_info_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - memory
+
+- name: Extract swap total
+  ansible.builtin.set_fact:
+    swap_total_mb: "{{ swap_info_result.stdout_lines[1].split() | select('match', '^[0-9]+$') | list | first | default('0') | int }}"
+  tags:
+    - prerequisites
+    - memory
+
+- name: Display memory information summary
+  ansible.builtin.debug:
+    msg:
+      - "Memory Information:"
+      - "  Total RAM: {{ total_memory_gb }}GB ({{ total_memory_mb }}MB)"
+      - "  Available: {{ available_memory_mb }}MB"
+      - "  Swap: {{ swap_total_mb }}MB"
+      - "  Minimum Required: {{ min_memory_gb }}GB"
+  tags:
+    - prerequisites
+    - memory

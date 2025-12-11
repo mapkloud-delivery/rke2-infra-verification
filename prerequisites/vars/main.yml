@@ -1,0 +1,65 @@
+#SPDX-License-Identifier: MIT-0
+---
+# vars file for prerequisites
+
+# MTU settings
+expected_mtu: 1500  # Adjust if using jumbo frames
+
+# Minimum system requirements - Master nodes
+min_cpu_cores_master: 8
+min_memory_gb_master: 12
+min_disk_gb_master: 80
+
+# Minimum system requirements - Worker nodes
+min_cpu_cores_worker: 12
+min_memory_gb_worker: 24
+min_disk_gb_worker: 100
+
+# Default data directory for RKE2 installation.
+# Being checked for disk space requirements.
+rke2_data_dir: "/var/lib/rancher/rke2"
+
+# Common requirements
+min_kernel_version: "5.4.0"
+
+# Required kernel modules
+required_kernel_modules:
+  - overlay
+  - br_netfilter
+  - ip_vs
+  - ip_vs_rr
+  - ip_vs_wrr
+  - ip_vs_sh
+  - nf_conntrack
+
+# Time synchronization servers
+ntp_servers:
+  - "0.pool.ntp.org"
+  - "1.pool.ntp.org"
+  - "2.pool.ntp.org"
+  - "3.pool.ntp.org"
+
+# SSH configuration defaults
+ssh_password_auth_allowed: false
+ssh_root_login_allowed: false
+
+# Package manager timeout (seconds)
+package_manager_timeout: 300
+
+# Required Ports
+required_ports:
+  - { port: 6443, protocol: tcp, description: "Kubernetes API server" }
+  - { port: 9345, protocol: tcp, description: "RKE2 Supervisor (HA quorum)" }
+  - { port: 10250, protocol: tcp, description: "Kubelet API" }
+  - { port: 8472, protocol: udp, description: "VXLAN overlay network" }
+  - { port: 51820, protocol: udp, description: "Flannel VXLAN" }
+  - { port: 51821, protocol: udp, description: "Flannel VXLAN" }
+  - { port: 2379, protocol: tcp, description: "etcd client requests" }
+  - { port: 2380, protocol: tcp, description: "etcd peer communication" }
+  - { port: 30000, protocol: tcp, description: "NodePort services range start" }
+  - { port: 32767, protocol: tcp, description: "NodePort services range end" }
+  # Calico CNI ports
+  - { port: 179, protocol: tcp, description: "Calico BGP (node-to-node communication)" }
+  - { port: 4789, protocol: udp, description: "Calico VXLAN encapsulation" }
+  - { port: 5473, protocol: tcp, description: "Calico Typha (scaling service)" }
+  - { port: 9099, protocol: tcp, description: "Calico metrics endpoint" }

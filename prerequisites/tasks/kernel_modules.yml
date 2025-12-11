@@ -1,0 +1,118 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Kernel Modules Validation
+# Checks if required kernel modules are loaded
+
+- name: Get list of loaded kernel modules
+  ansible.builtin.command: lsmod
+  register: loaded_modules_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Extract loaded module names
+  ansible.builtin.set_fact:
+    loaded_modules: "{{ loaded_modules_result.stdout_lines[1:] | map('regex_replace', '^(\\S+).*', '\\1') | list }}"
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Check if each required kernel module can be loaded
+  ansible.builtin.command: modprobe -n {{ item }}
+  register: modprobe_check_result
+  changed_when: false
+  failed_when: false
+  loop: "{{ required_kernel_modules }}"
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Verify all required kernel modules can be loaded
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+    fail_msg: "Required kernel module '{{ item.item }}' cannot be loaded. Check if it's available in the kernel. Load it with: modprobe {{ item.item }}"
+    success_msg: "Kernel module '{{ item.item }}' is available ({{ 'loaded' if item.item in loaded_modules else 'can be loaded' }})"
+  loop: "{{ modprobe_check_result.results | default([]) }}"
+  when: item.rc is defined
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Check overlay filesystem support (sysfs)
+  ansible.builtin.stat:
+    path: /sys/module/overlay
+  register: overlay_module_check
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Check if overlay module can be loaded
+  ansible.builtin.command: modprobe -n overlay
+  register: overlay_modprobe_check
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Verify overlay module is available
+  ansible.builtin.assert:
+    that:
+      - overlay_modprobe_check.rc == 0 or overlay_module_check.stat.exists or 'overlay' in loaded_modules
+    fail_msg: "Overlay filesystem module is not available. Required for container runtime. Check if it's available in the kernel."
+    success_msg: "Overlay filesystem support is available ({{ 'loaded' if ('overlay' in loaded_modules or overlay_module_check.stat.exists) else 'can be loaded' }})"
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Check bridge netfilter support (sysfs)
+  ansible.builtin.stat:
+    path: /proc/sys/net/bridge
+  register: bridge_netfilter_check
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Check if bridge netfilter module can be loaded
+  ansible.builtin.command: modprobe -n br_netfilter
+  register: bridge_netfilter_modprobe_check
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Verify bridge netfilter is available
+  ansible.builtin.assert:
+    that:
+      - bridge_netfilter_modprobe_check.rc == 0 or bridge_netfilter_check.stat.exists or 'br_netfilter' in loaded_modules
+    fail_msg: "Bridge netfilter is not available. Required for Kubernetes networking. Check if it's available in the kernel."
+    success_msg: "Bridge netfilter support is available ({{ 'loaded' if ('br_netfilter' in loaded_modules or bridge_netfilter_check.stat.exists) else 'can be loaded' }})"
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Get module information for debugging
+  ansible.builtin.command: modinfo {{ item }}
+  register: module_info_result
+  changed_when: false
+  failed_when: false
+  loop: "{{ required_kernel_modules }}"
+  when: item not in loaded_modules
+  tags:
+    - prerequisites
+    - kernel
+
+- name: Display kernel modules information summary
+  ansible.builtin.debug:
+    msg:
+      - "Kernel Modules Information:"
+      - "  Required modules: {{ required_kernel_modules | join(', ') }}"
+      - "  Loaded modules: {{ required_kernel_modules | select('in', loaded_modules) | list | join(', ') }}"
+      - "  Missing modules: {{ required_kernel_modules | reject('in', loaded_modules) | list | join(', ') if (required_kernel_modules | reject('in', loaded_modules) | list | length > 0) else 'None' }}"
+  tags:
+    - prerequisites
+    - kernel
+

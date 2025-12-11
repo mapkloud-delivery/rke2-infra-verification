@@ -1,0 +1,172 @@
+#SPDX-License-Identifier: MIT-0
+---
+# User Permissions Validation
+# Checks sudo access and required user groups
+
+- name: Get current user
+  ansible.builtin.set_fact:
+    current_user: "{{ ansible_user | default(ansible_env.USER) }}"
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Check if user has sudo access
+  ansible.builtin.command: sudo -n true
+  register: sudo_check_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Verify sudo access without password
+  ansible.builtin.assert:
+    that:
+      - sudo_check_result.rc == 0
+    fail_msg: "User {{ current_user }} does not have passwordless sudo access. Configure NOPASSWD in sudoers."
+    success_msg: "Sudo access check passed: User {{ current_user }} has passwordless sudo"
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Check sudoers configuration
+  ansible.builtin.command: sudo -l
+  register: sudo_list_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Get user groups
+  ansible.builtin.command: groups {{ current_user }}
+  register: user_groups_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Extract user groups list
+  ansible.builtin.set_fact:
+    user_groups: "{{ (user_groups_result.stdout | regex_replace('^' + current_user + '\\s*:\\s*', '')).split() }}"
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Check if user is in sudo group
+  ansible.builtin.assert:
+    that:
+      - "'sudo' in user_groups or 'wheel' in user_groups"
+    fail_msg: "User {{ current_user }} is not in sudo or wheel group. Groups found: {{ user_groups | join(', ') }}"
+    success_msg: "User {{ current_user }} is in sudo/wheel group"
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Check if user can execute commands as root
+  ansible.builtin.command: sudo whoami
+  register: sudo_whoami_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Verify sudo root access
+  ansible.builtin.assert:
+    that:
+      - sudo_whoami_result.stdout == "root"
+    fail_msg: "Cannot execute commands as root via sudo"
+    success_msg: "Sudo root access verified"
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Check /etc/sudoers file permissions
+  ansible.builtin.stat:
+    path: /etc/sudoers
+  register: sudoers_file_check
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Verify sudoers file has correct permissions
+  ansible.builtin.assert:
+    that:
+      - sudoers_file_check.stat.mode | int == 440 or sudoers_file_check.stat.mode | int == 400
+    fail_msg: "/etc/sudoers has incorrect permissions: {{ sudoers_file_check.stat.mode }}. Should be 440 or 400"
+    success_msg: "Sudoers file permissions check passed"
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Get user home directory
+  ansible.builtin.shell: "getent passwd {{ current_user }} | cut -d: -f6"
+  args:
+    executable: /bin/bash
+  register: user_home_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Check if user home directory exists
+  ansible.builtin.stat:
+    path: "{{ user_home_result.stdout }}"
+  register: home_dir_check
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Verify home directory exists
+  ansible.builtin.assert:
+    that:
+      - home_dir_check.stat.exists
+    fail_msg: "User home directory does not exist: {{ user_home_result.stdout }}"
+    success_msg: "Home directory check passed: {{ user_home_result.stdout }}"
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Check file descriptor limits
+  ansible.builtin.command: ulimit -n
+  register: fd_limit_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Check system-wide file descriptor limits
+  ansible.builtin.command: cat /proc/sys/fs/file-max
+  register: system_fd_max
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - permissions
+
+- name: Verify file descriptor limits are sufficient
+  ansible.builtin.assert:
+    that:
+      - fd_limit_result.stdout | int >= 65536
+    fail_msg: "File descriptor limit is too low: {{ fd_limit_result.stdout }}. Minimum recommended: 65536. Kubernetes components require sufficient file descriptors."
+    success_msg: "File descriptor limit check passed: {{ fd_limit_result.stdout }}"
+  when: fd_limit_result.rc == 0
+  tags:
+    - prerequisites
+    - permissions
+- name: Display user permissions information summary
+  ansible.builtin.debug:
+    msg:
+      - "User Permissions Information:"
+      - "  Current User: {{ current_user }}"
+      - "  User Groups: {{ user_groups | join(', ') }}"
+      - "  Sudo Access: {{ 'Yes (passwordless)' if sudo_check_result.rc == 0 else 'No' }}"
+      - "  Sudo Root Access: {{ 'Yes' if (sudo_whoami_result.rc == 0 and sudo_whoami_result.stdout == 'root') else 'No' }}"
+      - "  Home Directory: {{ user_home_result.stdout }}"
+      - "  File Descriptor Limit: {{ fd_limit_result.stdout | default('N/A') }} (system max: {{ system_fd_max.stdout | default('N/A') }})"
+  tags:
+    - prerequisites
+    - permissions
+

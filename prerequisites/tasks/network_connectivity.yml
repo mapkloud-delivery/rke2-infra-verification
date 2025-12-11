@@ -1,0 +1,225 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Network Connectivity Validation
+# Checks connectivity between nodes, DNS resolution, and network interfaces
+
+- name: Gather network facts
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!any'
+      - network
+
+- name: Get primary network interface
+  ansible.builtin.set_fact:
+    primary_interface: "{{ ansible_default_ipv4.interface }}"
+  tags:
+    - prerequisites
+    - network
+
+- name: Check network interface is up
+  ansible.builtin.assert:
+    that:
+      - ansible_default_ipv4.address is defined
+    fail_msg: "No IPv4 address configured on primary interface"
+    success_msg: "Network interface check passed: {{ primary_interface }} with IP {{ ansible_default_ipv4.address }}"
+  tags:
+    - prerequisites
+    - network
+
+- name: Test external DNS resolution
+  ansible.builtin.command: getent hosts google.com
+  register: external_dns_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - network
+
+- name: Check DNS resolution works
+  ansible.builtin.assert:
+    that:
+      - external_dns_result.rc == 0
+    fail_msg: "DNS resolution failed. Cannot resolve external hostnames"
+    success_msg: "DNS resolution check passed"
+  tags:
+    - prerequisites
+    - network
+
+- name: Get all cluster node IPs
+  ansible.builtin.set_fact:
+    cluster_node_ips: "{{ groups['cluster_nodes'] | map('extract', hostvars, 'ansible_host') | list }}"
+  tags:
+    - prerequisites
+    - network
+
+- name: Ping all cluster nodes
+  ansible.builtin.ping:
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['cluster_nodes'] }}"
+  when: inventory_hostname != item
+  register: ping_results
+  ignore_errors: true
+  tags:
+    - prerequisites
+    - network
+
+- name: Count successful pings (excluding self)
+  ansible.builtin.set_fact:
+    successful_pings: >-
+      {{
+        ping_results.results
+        | selectattr('item', 'ne', inventory_hostname)
+        | map(attribute='failed', default=false)
+        | select('equalto', false)
+        | list
+        | length
+      }}
+  when:
+    - inventory_hostname in groups['cluster_nodes']
+    - ping_results.results is defined
+  tags:
+    - prerequisites
+    - network
+
+- name: Verify connectivity to all cluster nodes
+  ansible.builtin.assert:
+    that:
+      - successful_pings | int == (groups['cluster_nodes'] | length - 1)
+    fail_msg: >-
+      Cannot reach all cluster nodes. Expected
+      {{ groups['cluster_nodes'] | length - 1 }} successful pings, got
+      {{ successful_pings }}. Check network connectivity and firewall rules
+    success_msg: >-
+      Connectivity check passed: Can reach all
+      {{ groups['cluster_nodes'] | length - 1 }} cluster nodes
+  when:
+    - inventory_hostname in groups['cluster_nodes']
+    - successful_pings is defined
+  tags:
+    - prerequisites
+    - network
+
+- name: Check if node can reach itself
+  ansible.builtin.command: ping -c 1 {{ ansible_default_ipv4.address }}
+  register: self_ping_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - network
+
+- name: Check IP forwarding is enabled
+  ansible.builtin.command: sysctl -n net.ipv4.ip_forward
+  register: ip_forward_check
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - network
+
+- name: Check bridge netfilter sysctl settings
+  ansible.builtin.command: sysctl -n {{ item }}
+  register: bridge_netfilter_check
+  changed_when: false
+  failed_when: false
+  loop:
+    - net.bridge.bridge-nf-call-iptables
+    - net.bridge.bridge-nf-call-ip6tables
+  tags:
+    - prerequisites
+    - network
+- name: Verify IP forwarding configuration
+  ansible.builtin.assert:
+    that:
+      - ip_forward_check.stdout | int == 1
+    fail_msg: "IP forwarding is disabled (net.ipv4.ip_forward=0). Required for Kubernetes networking. Will be enabled by common role."
+    success_msg: "IP forwarding is enabled (net.ipv4.ip_forward=1)"
+  when: ip_forward_check.rc == 0
+  tags:
+    - prerequisites
+    - network
+
+- name: Verify bridge netfilter configuration
+  ansible.builtin.assert:
+    that:
+      - item.stdout | int == 1
+    fail_msg: "Bridge netfilter setting {{ item.item }} is disabled. Required for Kubernetes networking. Will be enabled by common role."
+    success_msg: "Bridge netfilter setting {{ item.item }} is enabled"
+  loop: "{{ bridge_netfilter_check.results | default([]) }}"
+  when: item.rc == 0
+  tags:
+    - prerequisites
+    - network
+
+- name: Check for secondary network interface (workers with dual NICs)
+  ansible.builtin.set_fact:
+    has_secondary_nic: "{{ mgmt_ip is defined and prod_data_ip is defined }}"
+  when: inventory_hostname in groups['workers']
+  tags:
+    - prerequisites
+    - network
+
+- name: Verify secondary NIC IP is configured (workers)
+  ansible.builtin.assert:
+    that:
+      - prod_data_ip is defined
+      - prod_data_ip != ""
+    fail_msg: "Worker node missing production VLAN IP (prod_data_ip) configuration"
+    success_msg: "Secondary NIC (K8sPROD-VLAN510) configured with IP {{ prod_data_ip }}"
+  when:
+    - inventory_hostname in groups['workers']
+    - has_secondary_nic | default(false)
+  tags:
+    - prerequisites
+    - network
+
+- name: Test connectivity on production VLAN (workers)
+  ansible.builtin.command: ping -c 1 -W 2 {{ prod_data_ip }}
+  register: prod_nic_ping
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname in groups['workers']
+    - prod_data_ip is defined
+  tags:
+    - prerequisites
+    - network
+
+- name: Verify production NIC is reachable
+  ansible.builtin.assert:
+    that:
+      - prod_nic_ping.rc == 0
+    fail_msg: "Cannot ping production VLAN IP {{ prod_data_ip }}. Check network configuration."
+    success_msg: "Production VLAN NIC ({{ prod_data_ip }}) is reachable"
+  when:
+    - inventory_hostname in groups['workers']
+    - prod_nic_ping is defined
+  tags:
+    - prerequisites
+    - network
+
+- name: Display network information summary
+  ansible.builtin.debug:
+    msg:
+      - "Network Information:"
+      - "  Primary Interface: {{ primary_interface }}"
+      - "  IPv4 Address: {{ ansible_default_ipv4.address }}"
+      - "  IPv4 Gateway: {{ ansible_default_ipv4.gateway | default('N/A') }}"
+      - "  DNS Resolution: {{ 'Working' if external_dns_result.rc == 0 else 'Failed' }}"
+      - >-
+        IP Forwarding: {{ 'Enabled' if (ip_forward_check.rc == 0 and
+        ip_forward_check.stdout | int == 1) else 'Disabled (will be enabled)' }}
+      - >-
+        Bridge Netfilter: {{ 'Enabled' if (bridge_netfilter_check.results
+        | default([]) | selectattr('rc', 'equalto', 0) | selectattr('stdout',
+        'equalto', '1') | list | length == 2) else 'Disabled (will be enabled)' }}
+      - >-
+        Cluster Nodes Reachable: {{ 'Yes' if (inventory_hostname not in
+        groups['cluster_nodes'] or ping_results is defined) else 'N/A' }}
+      - >-
+        Production VLAN NIC: {{ 'Configured (' + prod_data_ip + ')' if (inventory_hostname in groups['workers'] and prod_data_ip is defined) else 'N/A' }}
+  tags:
+    - prerequisites
+    - network
+

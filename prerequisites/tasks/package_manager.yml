@@ -1,0 +1,164 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Package Manager Validation
+# Checks package manager availability and functionality
+
+- name: Check if apt is available (Ubuntu/Debian)
+  ansible.builtin.command: which apt
+  register: apt_check_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Check if yum is available (RHEL/CentOS 7)
+  ansible.builtin.command: which yum
+  register: yum_check_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Check if dnf is available (RHEL/CentOS 8+)
+  ansible.builtin.command: which dnf
+  register: dnf_check_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Verify package manager is available (Debian)
+  ansible.builtin.assert:
+    that:
+      - apt_check_result.rc == 0
+    fail_msg: "apt package manager is not available"
+    success_msg: "apt package manager is available"
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Verify package manager is available (RedHat)
+  ansible.builtin.assert:
+    that:
+      - yum_check_result.rc == 0 or dnf_check_result.rc == 0
+    fail_msg: "yum or dnf package manager is not available"
+    success_msg: "Package manager is available ({{ 'dnf' if dnf_check_result.rc == 0 else 'yum' }})"
+  when: ansible_os_family == "RedHat"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Test apt package list update (Debian)
+  ansible.builtin.command: apt list --upgradable
+  register: apt_list_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Verify apt can query packages (Debian)
+  ansible.builtin.assert:
+    that:
+      - apt_list_result.rc == 0
+    fail_msg: "apt cannot query packages. Check package manager configuration."
+    success_msg: "apt package query test passed"
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Test yum package list (RedHat)
+  ansible.builtin.command: yum list available
+  register: yum_list_result
+  changed_when: false
+  failed_when: false
+  when:
+    - ansible_os_family == "RedHat"
+    - yum_check_result.rc == 0
+  tags:
+    - prerequisites
+    - packages
+
+- name: Test dnf package list (RedHat)
+  ansible.builtin.command: dnf list available
+  register: dnf_list_result
+  changed_when: false
+  failed_when: false
+  when:
+    - ansible_os_family == "RedHat"
+    - dnf_check_result.rc == 0
+  tags:
+    - prerequisites
+    - packages
+
+- name: Verify package manager can query packages (RedHat)
+  ansible.builtin.assert:
+    that:
+      - yum_list_result.rc == 0 or dnf_list_result.rc == 0
+    fail_msg: "Package manager cannot query packages. Check repository configuration."
+    success_msg: "Package manager query test passed"
+  when: ansible_os_family == "RedHat"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Check if curl is installed
+  ansible.builtin.command: which curl
+  register: curl_check_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - packages
+
+- name: Check if wget is installed
+  ansible.builtin.command: which wget
+  register: wget_check_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - packages
+
+- name: Check if Python 3 is installed
+  ansible.builtin.command: python3 --version
+  register: python3_check_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - packages
+
+- name: Verify Python 3 is installed
+  ansible.builtin.assert:
+    that:
+      - python3_check_result.rc == 0
+    fail_msg: "Python 3 is not installed. Required for Ansible."
+    success_msg: "Python 3 is installed: {{ python3_check_result.stdout }}"
+  tags:
+    - prerequisites
+    - packages
+
+- name: Display package manager information summary
+  ansible.builtin.debug:
+    msg:
+      - "Package Manager Information:"
+      - "  OS Family: {{ ansible_os_family }}"
+      - "  Package Manager: {{ 'apt' if (ansible_os_family == 'Debian' and apt_check_result.rc == 0) else ('dnf' if (ansible_os_family == 'RedHat' and dnf_check_result.rc == 0) else ('yum' if (ansible_os_family == 'RedHat' and yum_check_result.rc == 0) else 'Unknown')) }}"
+      - "  Package Query: {{ 'Working' if ((ansible_os_family == 'Debian' and apt_list_result.rc == 0) or (ansible_os_family == 'RedHat' and (yum_list_result.rc == 0 or dnf_list_result.rc == 0))) else 'Failed' }}"
+      - "  curl: {{ 'Installed' if curl_check_result.rc == 0 else 'Not installed' }}"
+      - "  wget: {{ 'Installed' if wget_check_result.rc == 0 else 'Not installed' }}"
+      - "  Python 3: {{ python3_check_result.stdout if python3_check_result.rc == 0 else 'Not installed' }}"
+  tags:
+    - prerequisites
+    - packages
+

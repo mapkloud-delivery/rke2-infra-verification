@@ -1,0 +1,131 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Time Synchronization Validation
+# Checks NTP/chronyd status and time drift
+
+- name: Check if chronyd is installed and running
+  ansible.builtin.command: systemctl is-active chronyd
+  register: chronyd_status_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - time
+
+- name: Check if systemd-timesyncd is active (Ubuntu/Debian)
+  ansible.builtin.command: systemctl is-active systemd-timesyncd
+  register: timesyncd_status_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - time
+
+- name: Check if ntpd is installed and running
+  ansible.builtin.command: systemctl is-active ntpd
+  register: ntpd_status_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - time
+
+- name: Verify time synchronization service is active
+  ansible.builtin.assert:
+    that:
+      - chronyd_status_result.stdout == "active" or
+        timesyncd_status_result.stdout == "active" or
+        ntpd_status_result.stdout == "active"
+    fail_msg: "No time synchronization service is active. Install and enable chronyd, systemd-timesyncd, or ntpd."
+    success_msg: "Time synchronization service is active"
+  tags:
+    - prerequisites
+    - time
+
+- name: Get current system time
+  ansible.builtin.command: date
+  register: system_time_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - time
+
+- name: Get chrony tracking information
+  ansible.builtin.command: chrony tracking
+  register: chrony_tracking_result
+  changed_when: false
+  failed_when: false
+  when: chronyd_status_result.stdout == "active"
+  tags:
+    - prerequisites
+    - time
+
+- name: Get chrony sources
+  ansible.builtin.command: chrony sources
+  register: chrony_sources_result
+  changed_when: false
+  failed_when: false
+  when: chronyd_status_result.stdout == "active"
+  tags:
+    - prerequisites
+    - time
+
+- name: Check if chrony has synchronized sources
+  ansible.builtin.assert:
+    that:
+      - "'^*' in chrony_sources_result.stdout"
+    fail_msg: "chronyd is running but has no synchronized time sources"
+    success_msg: "chronyd has synchronized time sources"
+  when:
+    - chronyd_status_result.stdout == "active"
+    - chrony_sources_result.rc == 0
+  tags:
+    - prerequisites
+    - time
+
+- name: Get systemd-timesyncd status (Ubuntu/Debian)
+  ansible.builtin.command: timedatectl status
+  register: timedatectl_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - time
+
+- name: Check systemd-timesyncd synchronization status
+  ansible.builtin.assert:
+    that:
+      - "'System clock synchronized: yes' in timedatectl_result.stdout"
+    fail_msg: "System clock is not synchronized"
+    success_msg: "System clock is synchronized"
+  when:
+    - ansible_os_family == "Debian"
+    - timedatectl_result.rc == 0
+  tags:
+    - prerequisites
+    - time
+
+- name: Get timezone information
+  ansible.builtin.command: timedatectl
+  register: timezone_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - time
+
+- name: Display time synchronization information summary
+  ansible.builtin.debug:
+    msg:
+      - "Time Synchronization Information:"
+      - "  Current Time: {{ system_time_result.stdout }}"
+      - "  chronyd Status: {{ chronyd_status_result.stdout | default('Not installed/Not checked') }}"
+      - "  systemd-timesyncd Status: {{ timesyncd_status_result.stdout | default('Not installed/Not checked') if ansible_os_family == 'Debian' else 'N/A' }}"
+      - "  ntpd Status: {{ ntpd_status_result.stdout | default('Not installed/Not checked') }}"
+      - "  Timezone: {{ timezone_result.stdout | regex_search('Time zone: ([^\\s]+)') | default('N/A') }}"
+  tags:
+    - prerequisites
+    - time
+

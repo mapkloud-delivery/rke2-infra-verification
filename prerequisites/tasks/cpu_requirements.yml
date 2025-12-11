@@ -1,0 +1,65 @@
+#SPDX-License-Identifier: MIT-0
+---
+# CPU Requirements Validation
+# Checks CPU cores and basic CPU information
+
+- name: Gather processor facts
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!any'
+      - processor
+
+- name: Get CPU core count
+  ansible.builtin.command: nproc
+  register: cpu_cores_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - cpu
+
+- name: Get CPU information
+  ansible.builtin.command: lscpu
+  register: cpu_info_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - cpu
+
+- name: Set minimum CPU cores based on node type
+  ansible.builtin.set_fact:
+    min_cpu_cores: "{{ min_cpu_cores_master if inventory_hostname in groups['masters'] else min_cpu_cores_worker }}"
+  tags:
+    - prerequisites
+    - cpu
+
+- name: Check minimum CPU cores requirement
+  ansible.builtin.assert:
+    that:
+      - cpu_cores_result.stdout|int >= (min_cpu_cores | int)
+    fail_msg: "Insufficient CPU cores: {{ cpu_cores_result.stdout }}. Minimum required: {{ min_cpu_cores }}"
+    success_msg: "CPU cores check passed: {{ cpu_cores_result.stdout }} cores (minimum: {{ min_cpu_cores }})"
+  tags:
+    - prerequisites
+    - cpu
+
+- name: Get CPU model name
+  ansible.builtin.shell: 'grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | xargs'
+  register: cpu_model_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - cpu
+
+- name: Display CPU information summary
+  ansible.builtin.debug:
+    msg:
+      - "CPU Information:"
+      - "  Cores: {{ cpu_cores_result.stdout }}"
+      - "  Model: {{ cpu_model_result.stdout | default('N/A') }}"
+      - "  Architecture: {{ ansible_architecture }}"
+  tags:
+    - prerequisites
+    - cpu
+

@@ -1,0 +1,21 @@
+#SPDX-License-Identifier: MIT-0
+---
+# handlers file for prerequisites
+- name: restart ssh service
+  ansible.builtin.systemd:
+    name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+    state: restarted
+  listen: restart_ssh
+
+- name: enable time sync service
+  ansible.builtin.systemd:
+    name: "{{ 'chronyd' if (ansible_os_family == 'RedHat' or chronyd_status_result.stdout == 'active') else 'systemd-timesyncd' }}"
+    enabled: true
+    state: started
+  listen: enable_time_sync
+
+- name: load kernel module
+  ansible.builtin.modprobe:
+    name: "{{ module_name }}"
+    state: present
+  listen: load_kernel_module

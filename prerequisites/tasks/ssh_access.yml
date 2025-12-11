@@ -1,0 +1,137 @@
+#SPDX-License-Identifier: MIT-0
+---
+# SSH Access Validation
+# Checks SSH configuration and key-based authentication
+
+- name: Check if SSH service is running
+  ansible.builtin.command: systemctl is-active ssh
+  register: ssh_service_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Check if SSH service is running (alternative name)
+  ansible.builtin.command: systemctl is-active sshd
+  register: sshd_service_result
+  changed_when: false
+  failed_when: false
+  when: ssh_service_result.rc != 0
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Verify SSH service is active
+  ansible.builtin.assert:
+    that:
+      - ssh_service_result.stdout == "active" or sshd_service_result.stdout == "active"
+    fail_msg: "SSH service is not running. Enable and start SSH service."
+    success_msg: "SSH service is active"
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Check SSH daemon configuration file exists
+  ansible.builtin.stat:
+    path: /etc/ssh/sshd_config
+  register: sshd_config_check
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Verify SSH configuration file exists
+  ansible.builtin.assert:
+    that:
+      - sshd_config_check.stat.exists
+    fail_msg: "SSH configuration file /etc/ssh/sshd_config does not exist"
+    success_msg: "SSH configuration file exists"
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Check if password authentication is disabled
+  ansible.builtin.command: grep -E "^[^#]*PasswordAuthentication" /etc/ssh/sshd_config | tail -1
+  register: password_auth_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Verify password authentication is disabled (recommended)
+  ansible.builtin.assert:
+    that:
+      - password_auth_result.stdout == "" or "PasswordAuthentication no" in password_auth_result.stdout
+    fail_msg: "Password authentication is enabled. Consider disabling it for security: PasswordAuthentication no"
+    success_msg: "Password authentication check passed (disabled or not configured)"
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Check if root login is disabled
+  ansible.builtin.command: grep -E "^[^#]*PermitRootLogin" /etc/ssh/sshd_config | tail -1
+  register: root_login_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Verify root login is disabled (recommended)
+  ansible.builtin.assert:
+    that:
+      - root_login_result.stdout == "" or "PermitRootLogin no" in root_login_result.stdout or "PermitRootLogin prohibit-password" in root_login_result.stdout
+    fail_msg: "Root login is enabled. Consider disabling it: PermitRootLogin no"
+    success_msg: "Root login check passed (disabled or key-only)"
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Check SSH key-based authentication
+  ansible.builtin.stat:
+    path: "{{ ansible_env.HOME }}/.ssh"
+  register: ssh_dir_check
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Check for SSH private key
+  ansible.builtin.stat:
+    path: "{{ ansible_env.HOME }}/.ssh/id_rsa"
+  register: ssh_key_check
+  when: ssh_dir_check.stat.exists
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Check for SSH authorized_keys
+  ansible.builtin.stat:
+    path: "{{ ansible_env.HOME }}/.ssh/authorized_keys"
+  register: authorized_keys_check
+  when: ssh_dir_check.stat.exists
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Get current SSH user
+  ansible.builtin.set_fact:
+    ssh_user: "{{ ansible_user | default(ansible_env.USER) }}"
+  tags:
+    - prerequisites
+    - ssh
+
+- name: Display SSH access information summary
+  ansible.builtin.debug:
+    msg:
+      - "SSH Access Information:"
+      - "  SSH Service: {{ 'Active' if (ssh_service_result.stdout == 'active' or sshd_service_result.stdout == 'active') else 'Inactive' }}"
+      - "  SSH User: {{ ssh_user }}"
+      - "  SSH Directory: {{ 'Exists' if ssh_dir_check.stat.exists else 'Missing' }}"
+      - "  SSH Private Key: {{ 'Present' if (ssh_dir_check.stat.exists and ssh_key_check.stat.exists) else 'Not found' }}"
+      - "  Authorized Keys: {{ 'Present' if (ssh_dir_check.stat.exists and authorized_keys_check.stat.exists) else 'Not found' }}"
+      - "  Password Auth: {{ 'Disabled' if (password_auth_result.stdout == '' or 'PasswordAuthentication no' in password_auth_result.stdout) else 'Enabled (WARNING)' }}"
+  tags:
+    - prerequisites
+    - ssh
+

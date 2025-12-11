@@ -1,0 +1,121 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Firewall Rules Validation
+# Checks firewall status and SELinux configuration
+
+- name: Check if ufw is installed (Ubuntu/Debian)
+  ansible.builtin.command: which ufw
+  register: ufw_check_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Check ufw status (Ubuntu/Debian)
+  ansible.builtin.command: ufw status
+  register: ufw_status_result
+  changed_when: false
+  failed_when: false
+  when:
+    - ansible_os_family == "Debian"
+    - ufw_check_result.rc == 0
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Check if firewalld is installed (RHEL/CentOS)
+  ansible.builtin.command: which firewall-cmd
+  register: firewalld_check_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Check firewalld status (RHEL/CentOS)
+  ansible.builtin.command: firewall-cmd --state
+  register: firewalld_status_result
+  changed_when: false
+  failed_when: false
+  when:
+    - ansible_os_family == "RedHat"
+    - firewalld_check_result.rc == 0
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Check if iptables is available
+  ansible.builtin.command: which iptables
+  register: iptables_check_result
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Get iptables rules count
+  ansible.builtin.command: iptables -L -n | wc -l
+  register: iptables_rules_result
+  changed_when: false
+  failed_when: false
+  when: iptables_check_result.rc == 0
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Check SELinux status (RHEL/CentOS)
+  ansible.builtin.command: getenforce
+  register: selinux_status_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Verify SELinux is permissive or disabled
+  ansible.builtin.assert:
+    that:
+      - selinux_status_result.stdout.upper() in ['PERMISSIVE', 'DISABLED']
+    fail_msg: "SELinux is in {{ selinux_status_result.stdout }} mode. RKE2 requires permissive or disabled mode."
+    success_msg: "SELinux check passed: {{ selinux_status_result.stdout }}"
+  when:
+    - ansible_os_family == "RedHat"
+    - selinux_status_result.rc == 0
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Check if AppArmor is active (Ubuntu/Debian)
+  ansible.builtin.command: aa-status
+  register: apparmor_status_result
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "Debian"
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Display firewall information summary
+  ansible.builtin.debug:
+    msg:
+      - "Firewall Information:"
+      - "  UFW Status: {{ ufw_status_result.stdout | default('Not installed/Not checked') if ansible_os_family == 'Debian' else 'N/A' }}"
+      - "  Firewalld Status: {{ firewalld_status_result.stdout | default('Not installed/Not checked') if ansible_os_family == 'RedHat' else 'N/A' }}"
+      - "  iptables Rules: {{ iptables_rules_result.stdout | default('N/A') }}"
+      - "  SELinux: {{ selinux_status_result.stdout | default('N/A') if ansible_os_family == 'RedHat' else 'N/A' }}"
+      - "  AppArmor: {{ 'Active' if (ansible_os_family == 'Debian' and apparmor_status_result.rc == 0) else 'Inactive/N/A' }}"
+  tags:
+    - prerequisites
+    - firewall
+
+- name: Warning about firewall configuration
+  ansible.builtin.debug:
+    msg: "WARNING: Ensure firewall rules allow required ports (see required_ports in roles/prerequisites/vars/main.yml). Configure firewall rules if needed before RKE2 installation."
+  tags:
+    - prerequisites
+    - firewall
+

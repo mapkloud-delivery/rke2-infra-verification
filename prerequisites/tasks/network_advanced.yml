@@ -1,0 +1,65 @@
+#SPDX-License-Identifier: MIT-0
+# Advanced Network Validation Checklist
+#
+# 1. Network Interface Configuration
+#    - Verify all required interfaces are up and configured
+#    - Validate IP assignments match the network plan:
+#        - Masters: single control VLAN IP
+#        - Workers: control IP + data IP
+#        - Bastion: control IP
+#    - Identify which interface belongs to which VLAN
+#
+# 2. IP Address and Subnet Validation
+#    - Verify control VLAN IPs are in control_vlan_network
+#    - Verify data VLAN IPs are in data_vlan_network
+#    - Ensure subnet masks are /16
+#    - Check for IP conflicts
+#    - Validate no duplicate IPs on same interface
+#
+# 3. Gateway Configuration
+#    - Verify default gateway on control VLAN is reachable
+#    - Verify default gateway on data VLAN is reachable (workers only)
+#    - Test gateway connectivity with ping
+#    - Validate gateway is in correct subnet
+#
+# 4. Routing Configuration
+#    - Check for multiple default routes (should be avoided on workers)
+#    - Validate source-based routing rules (table 100) are configured on workers
+#    - Verify routing table 100 exists and has correct routes:
+#        - Data VLAN subnet route
+#        - Default route via data VLAN gateway
+#    - Verify IP rules for source-based routing (from data IP → table 100)
+#    - Check main routing table has control VLAN routes
+#
+# 5. Network Interface Properties
+#    - MTU validation
+#    - Interface speed/duplex (full-duplex, appropriate speed)
+#    - Link status (up/down)
+#    - Interface naming consistency
+#
+# 6. Inter-Host Connectivity (ICMP/TCP)
+#    - Control VLAN: all nodes can ping each other on control VLAN IPs
+#    - Data VLAN: workers can ping each other on data VLAN IPs
+#    - Master-to-worker: control VLAN connectivity
+#    - Worker-to-worker: both control and data VLAN connectivity
+#    - Bastion-to-all: control VLAN connectivity
+#
+# 7. Load Balancer VIP Reachability
+#    - Ping lb_vip_control from all nodes on control VLAN
+#    - Ping lb_vip_data from workers on data VLAN
+#
+# 8. Network Segmentation Validation
+#    - Verify control VLAN hosts can reach each other
+#    - Verify data VLAN hosts can reach each other
+#    - Test that control VLAN cannot directly access data VLAN (security validation)
+#    - Validate VLAN isolation
+#
+# 9. Port Availability (Basic TCP/UDP)
+#    - Verify required ports are not in use by other services (using ss/netstat)
+#    - Check for common port conflicts (SSH, DNS, etc.)
+#
+# 10. Asymmetric Routing Prevention (Workers Only)
+#     - Verify source-based routing rules are configured
+#     - Test routing: packets from data IP should route via data NIC
+#     - Validate routing table 100 configuration
+#     - Check that default route doesn't cause asymmetric routing

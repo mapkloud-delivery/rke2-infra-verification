@@ -1,0 +1,79 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Disk Space Requirements Validation
+# Checks available disk space on critical mount points
+
+- name: Gather mount facts
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!any'
+      - mounts
+
+- name: Get root filesystem disk space
+  ansible.builtin.command: df -BG /
+  register: root_disk_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - disk
+
+- name: Get /var filesystem disk space
+  ansible.builtin.command: df -BG /var
+  register: var_disk_result
+  changed_when: false
+  tags:
+    - prerequisites
+    - disk
+
+- name: Extract root filesystem available space (GB)
+  ansible.builtin.set_fact:
+    root_available_gb: "{{ (root_disk_result.stdout_lines[1].split()[3] | regex_replace('G$', '') | int) if root_disk_result.stdout_lines[1].split()|length > 3 else 0 }}"
+  tags:
+    - prerequisites
+    - disk
+
+- name: Extract /var filesystem available space (GB)
+  ansible.builtin.set_fact:
+    var_available_gb: "{{ (var_disk_result.stdout_lines[1].split()[3] | regex_replace('G$', '') | int) if var_disk_result.stdout_lines[1].split()|length > 3 else 0 }}"
+  tags:
+    - prerequisites
+    - disk
+
+- name: Set minimum disk space based on node type
+  ansible.builtin.set_fact:
+    min_disk_gb: "{{ min_disk_gb_master if inventory_hostname in groups['masters'] else min_disk_gb_worker }}"
+  tags:
+    - prerequisites
+    - disk
+
+- name: Check root filesystem has minimum disk space
+  ansible.builtin.assert:
+    that:
+      - root_available_gb|int >= (min_disk_gb | int)
+    fail_msg: "Insufficient disk space on /: {{ root_available_gb }}GB. Minimum required: {{ min_disk_gb }}GB"
+    success_msg: "Root filesystem disk space check passed: {{ root_available_gb }}GB available (minimum: {{ min_disk_gb }}GB)"
+  tags:
+    - prerequisites
+    - disk
+
+- name: Check /var filesystem has minimum disk space
+  ansible.builtin.assert:
+    that:
+      - var_available_gb|int >= (min_disk_gb | int)
+    fail_msg: "Insufficient disk space on /var: {{ var_available_gb }}GB. Minimum required: {{ min_disk_gb }}GB (RKE2 data directory: {{ rke2_data_dir }})"
+    success_msg: "/var filesystem disk space check passed: {{ var_available_gb }}GB available (minimum: {{ min_disk_gb }}GB)"
+  tags:
+    - prerequisites
+    - disk
+
+- name: Display disk space information summary
+  ansible.builtin.debug:
+    msg:
+      - "Disk Space Information:"
+      - "  Root (/) available: {{ root_available_gb }}GB"
+      - "  /var available: {{ var_available_gb }}GB"
+      - "  Minimum Required: {{ min_disk_gb }}GB"
+  tags:
+    - prerequisites
+    - disk
