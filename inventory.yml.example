@@ -1,0 +1,70 @@
+---
+all:
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    # Network plan configuration
+    control_vlan_network: "10.21.126.0/24"
+    control_vlan_gateway: "10.21.126.1"
+    data_vlan_network: "10.21.124.0/24"
+    data_vlan_gateway: "10.21.124.1"
+    # Load balancer VIPs
+    lb_vip_control: "10.21.126.3"
+    lb_vip_data: "10.21.124.2"
+  children:
+    bastion:
+      hosts:
+        bastion-host:
+          ansible_host: <BASTION_IP>
+          ansible_hostname: <BASTION_HOSTNAME>
+          ansible_user: <SSH_USER>
+          ansible_ssh_private_key_file: ~/.ssh/<SSH_KEY_NAME>
+          internal_ip: <BASTION_IP>
+    masters:
+      hosts:
+        master-1:
+          ansible_host: <MASTER1_IP>
+          ansible_hostname: <MASTER1_HOSTNAME>
+          ansible_user: <SSH_USER>
+          ansible_ssh_private_key_file: ~/.ssh/<SSH_KEY_NAME>
+        master-2:
+          ansible_host: <MASTER2_IP>
+          ansible_hostname: <MASTER2_HOSTNAME>
+          ansible_user: <SSH_USER>
+          ansible_ssh_private_key_file: ~/.ssh/<SSH_KEY_NAME>
+        master-3:
+          ansible_host: <MASTER3_IP>
+          ansible_hostname: <MASTER3_HOSTNAME>
+          ansible_user: <SSH_USER>
+          ansible_ssh_private_key_file: ~/.ssh/<SSH_KEY_NAME>
+      vars:
+        node_type: master
+    workers:
+      hosts:
+        worker-1:
+          ansible_host: <WORKER1_IP>
+          ansible_hostname: <WORKER1_HOSTNAME>
+          ansible_user: <SSH_USER>
+          ansible_ssh_private_key_file: ~/.ssh/<SSH_KEY_NAME>
+          mgmt_ip: <WORKER1_MGMT_IP>
+          prod_data_ip: <WORKER1_DATA_IP>
+        worker-2:
+          ansible_host: <WORKER2_IP>
+          ansible_hostname: <WORKER2_HOSTNAME>
+          ansible_user: <SSH_USER>
+          ansible_ssh_private_key_file: ~/.ssh/<SSH_KEY_NAME>
+          mgmt_ip: <WORKER2_MGMT_IP>
+          prod_data_ip: <WORKER2_DATA_IP>
+        worker-3:
+          ansible_host: <WORKER3_IP>
+          ansible_hostname: <WORKER3_HOSTNAME>
+          ansible_user: <SSH_USER>
+          ansible_ssh_private_key_file: ~/.ssh/<SSH_KEY_NAME>
+          mgmt_ip: <WORKER3_MGMT_IP>
+          prod_data_ip: <WORKER3_DATA_IP>
+      vars:
+        node_type: worker
+    cluster_nodes:
+      children:
+        masters:
+        workers:
+

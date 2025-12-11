@@ -1,6 +1,7 @@
 # Ansible
 *.retry
 .ansible/
+inventory.yml
 
 # Python
 __pycache__/
