@@ -57,6 +57,16 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 
 ## Kullanım
 
+### Bağlantı Testi
+
+Playbook'u çalıştırmadan önce, tüm hostlara bağlantıyı test edin:
+
+```bash
+ansible all -i inventory.yml -m ping
+```
+
+Tüm hostlar için `SUCCESS` mesajı almalısınız. Bağlantı sorunları varsa, önce bunları çözün.
+
 ### Tüm Kontrolleri Çalıştırma
 
 Playbook'u çalıştırın. Çıktı otomatik olarak tarihli bir dosyaya kaydedilir:
