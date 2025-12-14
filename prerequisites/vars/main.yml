@@ -63,8 +63,16 @@ required_ports:
   - { port: 2380, protocol: tcp, description: "etcd peer communication" }
   - { port: 30000, protocol: tcp, description: "NodePort services range start" }
   - { port: 32767, protocol: tcp, description: "NodePort services range end" }
-  # Calico CNI ports
-  - { port: 179, protocol: tcp, description: "Calico BGP (node-to-node communication)" }
-  - { port: 4789, protocol: udp, description: "Calico VXLAN encapsulation" }
-  - { port: 5473, protocol: tcp, description: "Calico Typha (scaling service)" }
-  - { port: 9099, protocol: tcp, description: "Calico metrics endpoint" }
+  # Cilium CNI ports
+  - { port: 4240, protocol: tcp, description: "Cilium agent health check" }
+  - { port: 4244, protocol: tcp, description: "Cilium clustermesh API" }
+  - { port: 4245, protocol: tcp, description: "Cilium clustermesh gRPC" }
+  - { port: 9962, protocol: tcp, description: "Cilium metrics endpoint" }
+  - { port: 9963, protocol: tcp, description: "Cilium operator metrics" }
+  - { port: 9964, protocol: tcp, description: "Cilium operator health check" }
+  - { port: 179, protocol: tcp, description: "Cilium BGP (if BGP mode enabled)" }
+  # MetalLB ports
+  - { port: 7472, protocol: tcp, description: "MetalLB controller metrics" }
+  - { port: 7473, protocol: tcp, description: "MetalLB speaker metrics" }
+  - { port: 7946, protocol: tcp, description: "MetalLB memberlist (speaker coordination)" }
+  - { port: 7946, protocol: udp, description: "MetalLB memberlist (speaker coordination)" }
