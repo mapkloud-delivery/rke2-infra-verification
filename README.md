@@ -128,12 +128,14 @@ Tüm hostlar için `SUCCESS` mesajı almalısınız. Bağlantı sorunları varsa
 Playbookları sırasıyla çalıştırın. Çıktı otomatik olarak tarihli bir dosyaya kaydedilir:
 
 ```bash
-ansible-playbook -i inventory.yml prerequisites.yml --skip-tags network_advanced | tee "teknik_keşif_raporu_wona$(date +%Y%m%d).txt"
+ansible-playbook -i inventory.yml prerequisites.yml --skip-tags "network_advanced,csi" | tee "teknik_keşif_raporu_wona$(date +%Y%m%d).txt"
 
 ansible-playbook -i inventory.yml prerequisites.yml --tags network_advanced | tee "teknik_keşif_raporu_na$(date +%Y%m%d).txt"
+
+ansible-playbook -i inventory.yml prerequisites.yml --limit workers --tags csi | tee "teknik_keşif_raporu_csi_workers$(date +%Y%m%d).txt"
 ```
 
-Bu komut hem ekranda gösterir hem de `teknik_keşif_raporu_YYYYMMDD.txt` formatında bir dosyaya kaydeder (örneğin: `teknik_keşif_raporu_wona20241215.txt`).
+Bu komutlar hem ekranda gösterir hem de `teknik_keşif_raporu_YYYYMMDD.txt` formatında bir dosyaya kaydeder (örneğin: `teknik_keşif_raporu_wona20241215.txt`).
 
 ## Notlar
 - Kontroller non-destructive (yıkıcı olmayan) işlemlerdir, sistemde değişiklik yapmazlar

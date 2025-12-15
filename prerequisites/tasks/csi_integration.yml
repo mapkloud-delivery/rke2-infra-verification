@@ -1,0 +1,112 @@
+#SPDX-License-Identifier: MIT-0
+---
+# CSI / Storage Integration Information Collection
+# Collects detailed storage and CSI-related information for Longhorn and similar CSI drivers.
+
+- name: Gather minimal facts for CSI integration checks
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!any'
+      - hardware
+      - network
+      - virtual
+
+- name: Collect kernel and OS release information
+  ansible.builtin.command: "{{ item }}"
+  register: csi_uname_osrelease
+  changed_when: false
+  failed_when: false
+  loop:
+    - uname -a
+    - cat /etc/os-release
+  tags:
+    - prerequisites
+    - storage
+    - csi
+
+- name: Collect block device layout
+  ansible.builtin.command: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
+  register: csi_lsblk
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - storage
+    - csi
+
+- name: Collect filesystem usage information
+  ansible.builtin.command: df -h
+  register: csi_df
+  changed_when: false
+  failed_when: false
+  tags:
+    - prerequisites
+    - storage
+    - csi
+
+- name: Check iSCSI service status (iscsid/open-iscsi)
+  ansible.builtin.shell: |
+    set -o pipefail
+    systemctl status iscsid 2>&1 || systemctl status open-iscsi 2>&1 || true
+  register: csi_iscsi_status
+  changed_when: false
+  failed_when: false
+  args:
+    executable: /bin/bash
+  tags:
+    - prerequisites
+    - storage
+    - csi
+
+- name: Collect CSI-related packages on Debian/Ubuntu
+  ansible.builtin.shell: |
+    dpkg -l | egrep 'open-iscsi|nfs-common|cryptsetup|dmsetup' || true
+  register: csi_pkgs_debian
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "Debian"
+  args:
+    executable: /bin/bash
+  tags:
+    - prerequisites
+    - storage
+    - csi
+
+- name: Collect CSI-related packages on RedHat/Rocky
+  ansible.builtin.shell: |
+    rpm -q open-iscsi nfs-utils cryptsetup dmsetup 2>&1 || true
+  register: csi_pkgs_redhat
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family in ["RedHat", "Rocky", "AlmaLinux"]
+  args:
+    executable: /bin/bash
+  tags:
+    - prerequisites
+    - storage
+    - csi
+
+- name: Display CSI / storage integration information summary
+  ansible.builtin.debug:
+    msg:
+      - "CSI / Storage Integration Information for {{ inventory_hostname }}:"
+      - "  uname / os-release:"
+      - "{{ csi_uname_osrelease.results | map(attribute='stdout_lines') | list }}"
+      - "  Block devices (lsblk):"
+      - "{{ csi_lsblk.stdout_lines | default([]) }}"
+      - "  Filesystem usage (df -h):"
+      - "{{ csi_df.stdout_lines | default([]) }}"
+      - "  Longhorn and /var/lib mounts:"
+      - "{{ csi_mounts.stdout_lines | default([]) }}"
+      - "  iSCSI service status:"
+      - "{{ csi_iscsi_status.stdout_lines | default([]) }}"
+      - "  CSI-related packages (Debian/Ubuntu):"
+      - "{{ csi_pkgs_debian.stdout_lines | default([]) if csi_pkgs_debian is defined else [] }}"
+      - "  CSI-related packages (RedHat/Rocky/AlmaLinux):"
+      - "{{ csi_pkgs_redhat.stdout_lines | default([]) if csi_pkgs_redhat is defined else [] }}"
+  tags:
+    - prerequisites
+    - storage
+    - csi
+

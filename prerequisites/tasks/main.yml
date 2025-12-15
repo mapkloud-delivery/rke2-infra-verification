@@ -284,3 +284,26 @@
   tags:
     - prerequisites
     - packages
+
+# CSI / Storage integration information collection: gathers detailed data for Longhorn/CSI validation.
+- name: Run CSI integration information collection
+  block:
+    - name: Include CSI integration information collection tasks
+      ansible.builtin.include_tasks: csi_integration.yml
+      when: inventory_hostname in groups['workers']
+      tags:
+        - prerequisites
+        - storage
+        - csi
+  rescue:
+    - name: Record CSI integration information collection failure
+      ansible.builtin.set_fact:
+        prerequisites_failures: "{{ prerequisites_failures | default([]) + ['CSI Integration Information'] }}"
+      tags:
+        - prerequisites
+        - storage
+        - csi
+  tags:
+    - prerequisites
+    - storage
+    - csi
